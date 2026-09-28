@@ -1,0 +1,30 @@
+# Normalise text to LF, also on Windows clones: bash scripts and Python must stay LF for WSL.
+* text=auto eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.cs text eol=lf
+*.meta text eol=lf
+*.unity text eol=lf
+*.prefab text eol=lf
+*.mat text eol=lf
+*.asset text eol=lf
+*.md text eol=lf
+*.yaml text eol=lf
+*.bat text eol=crlf
+
+# Binary assets: never touch line endings or diff them.
+*.onnx binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.fbx binary
+*.FBX binary
+*.stl binary
+*.STL binary
+*.tga binary
+*.psd binary
+*.exr binary
+*.ttf binary
+*.otf binary
+*.pgm binary

@@ -1,0 +1,25 @@
+# Obstacle detection (camera + 2D lidar). See docs/obstacle_detection.md.
+lidar_obstacles:
+  ros__parameters:
+    fixed_frame: odom           # tracks live here so robot motion is not mistaken for object motion
+    max_extent: 3.0             # drop segments longer than this (walls)
+    box_height: 0.5             # a 2D scan has no height; used for display and projection only
+    breakpoint_angle_deg: 10.0  # adaptive breakpoint: smaller splits objects more eagerly
+    sigma: 0.03                 # range noise (m)
+    min_points: 3
+    track_gate: 0.6             # max centre jump (m) between scans for the same track
+    max_misses: 3               # scans without a match before a track is dropped
+
+camera_detector:
+  ros__parameters:
+    # Defaults: models/detector.onnx and models/classes.txt installed with this package.
+    conf_threshold: 0.35
+    iou_threshold: 0.5
+    threads: 4
+    publish_annotated_image: true
+
+obstacle_fusion:
+  ros__parameters:
+    iou_gate: 0.3               # min horizontal IoU between a projected lidar box and a camera box
+    label_ttl: 1.0              # keep a camera label on a track this long without re-detection (s)
+    robot_frame: base_link

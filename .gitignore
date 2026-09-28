@@ -1,0 +1,32 @@
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.vs/
+
+# Unity (see also UnityProject/.gitignore)
+UnityProject/[Ll]ibrary/
+UnityProject/[Tt]emp/
+UnityProject/[Oo]bj/
+UnityProject/[Ll]ogs/
+UnityProject/[Bb]uild/
+UnityProject/[Bb]uilds/
+UnityProject/UserSettings/
+*.csproj
+*.sln
+
+# ROS 2 / colcon (scripts/run_ros.sh builds in ~/uc2_ws; these cover a build run in ros2_ws)
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Detector training: venv, generated dataset, runs and weights. The exported model is
+# committed in ros2_ws/src/unity_slam_example/models/.
+detection_training/.venv/
+detection_training/dataset*/
+detection_training/runs/
+detection_training/*.pt
