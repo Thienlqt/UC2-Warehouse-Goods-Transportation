@@ -22,7 +22,7 @@ macOS: Unity --TCP 127.0.0.1:10000--> container unity-nav2: ros_tcp_endpoint -> 
    which wins over `~/.colima/default/colima.yaml`; edit that copy if a resize seems ignored.
 3. **Clone and build the image** (about 10 minutes, once; code changes never need a rebuild):
    ```bash
-   git clone https://github.com/<org>/UC2-Warehouse-Goods-Transportation.git
+   git clone https://github.com/Thienlqt/UC2-Warehouse-Goods-Transportation.git
    cd UC2-Warehouse-Goods-Transportation
    docker build -t unity-robotics:jazzy docker
    ```

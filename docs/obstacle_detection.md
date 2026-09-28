@@ -38,6 +38,10 @@ The trained model is committed in `ros2_ws/src/unity_slam_example/models/` (`det
 and `classes.txt`, about 12 MB) and installed with the package, so a fresh clone detects out of
 the box on every OS. Retrain only when the scene or the classes change, as below.
 
+The committed model is the best epoch (15) of a 60-epoch run that stopped at epoch 16. On the
+900 validation frames it scores precision 0.91, recall 0.77, mAP50 0.84, mAP50-95 0.64.
+Running the full training (below) should improve it.
+
 **Warehouse model (classes `box`, `shelf`, `station`).** This is YOLOv8n fine-tuned from COCO
 weights on synthetic frames of this warehouse, rendered in Unity through a camera that matches the
 robot's. The COCO model is not an option here: it has no box, shelf or station class.

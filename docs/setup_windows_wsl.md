@@ -21,7 +21,7 @@ Windows: Unity (SimpleWarehouseScene) --TCP 127.0.0.1:10000--> WSL2: ros_tcp_end
 3. **Clone on the Windows drive**, in a short path without spaces, so Unity works at full speed:
    ```powershell
    mkdir C:\dev; cd C:\dev
-   git clone https://github.com/<org>/UC2-Warehouse-Goods-Transportation.git
+   git clone https://github.com/Thienlqt/UC2-Warehouse-Goods-Transportation.git
    ```
    Do your `git` work from Windows (terminal, VS Code or GitHub Desktop). If you also use `git` in
    WSL on this clone, run `git config core.fileMode false` there once, or every file shows as changed.
