@@ -57,9 +57,9 @@ namespace IntegrationTests
 
         const string k_RobotBaseName = "base_footprint/base_link";
         const string k_GoalPoseFrameId = "map";
-        const string k_GoalPoseTopic = "/goal_pose";
+        const string k_GoalPoseTopic = "/move_base_simple/goal";
         
-        const float k_Nav2InitializeTime = 5.0f;
+        const float k_NavigationInitializeTime = 5.0f;
         const float k_SleepBetweenWaypointsTime = 2.0f;
         
         // Used to define a timeout for waypoint navigation based on distances between steps
@@ -131,7 +131,7 @@ namespace IntegrationTests
 
             yield return new EnterPlayMode();
             // TODO: Implement some sort of confirmation mechanism on ROS side rather than use arbitrary sleep
-            yield return new WaitForSeconds(k_Nav2InitializeTime);
+            yield return new WaitForSeconds(k_NavigationInitializeTime);
             
             ros.RegisterPublisher<RosMessageTypes.Geometry.PoseStampedMsg>(k_GoalPoseTopic);
 

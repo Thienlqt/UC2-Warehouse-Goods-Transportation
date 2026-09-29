@@ -10,7 +10,7 @@ namespace RosMessageTypes.Vision
     [Serializable]
     public class ObjectHypothesisMsg : Message
     {
-        public const string k_RosMessageName = "vision_msgs/ObjectHypothesis";
+        public const string k_RosMessageName = "uc2_vision_msgs/ObjectHypothesis";
         public override string RosMessageName => k_RosMessageName;
 
         //  The unique ID of the object class.

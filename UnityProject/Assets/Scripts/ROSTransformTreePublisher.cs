@@ -67,7 +67,7 @@ public class ROSTransformTreePublisher : MonoBehaviour
         if (m_GlobalFrameIds.Count > 0)
         {
             var tfRootToGlobal = new TransformStampedMsg(
-                new HeaderMsg(new TimeStamp(Clock.time), m_GlobalFrameIds.Last()),
+                new HeaderMsg(0, new TimeStamp(Clock.time), m_GlobalFrameIds.Last()),
                 m_TransformRoot.name,
                 m_TransformRoot.Transform.To<FLU>());
             tfMessageList.Add(tfRootToGlobal);
@@ -82,7 +82,7 @@ public class ROSTransformTreePublisher : MonoBehaviour
         for (var i = 1; i < m_GlobalFrameIds.Count; ++i)
         {
             var tfGlobalToGlobal = new TransformStampedMsg(
-                new HeaderMsg(new TimeStamp(Clock.time), m_GlobalFrameIds[i - 1]),
+                new HeaderMsg(0, new TimeStamp(Clock.time), m_GlobalFrameIds[i - 1]),
                 m_GlobalFrameIds[i],
                 // Initializes to identity transform
                 new TransformMsg());

@@ -10,7 +10,7 @@ namespace RosMessageTypes.Vision
     [Serializable]
     public class BoundingBox2DMsg : Message
     {
-        public const string k_RosMessageName = "vision_msgs/BoundingBox2D";
+        public const string k_RosMessageName = "uc2_vision_msgs/BoundingBox2D";
         public override string RosMessageName => k_RosMessageName;
 
         //  A 2D bounding box that can be rotated about its center.

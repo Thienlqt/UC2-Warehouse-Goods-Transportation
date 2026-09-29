@@ -10,7 +10,7 @@ namespace RosMessageTypes.Vision
     [Serializable]
     public class Detection2DMsg : Message
     {
-        public const string k_RosMessageName = "vision_msgs/Detection2D";
+        public const string k_RosMessageName = "uc2_vision_msgs/Detection2D";
         public override string RosMessageName => k_RosMessageName;
 
         //  Defines a 2D detection result.

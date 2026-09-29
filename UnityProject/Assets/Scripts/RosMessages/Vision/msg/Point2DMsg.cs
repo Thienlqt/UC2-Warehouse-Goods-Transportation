@@ -10,7 +10,7 @@ namespace RosMessageTypes.Vision
     [Serializable]
     public class Point2DMsg : Message
     {
-        public const string k_RosMessageName = "vision_msgs/Point2D";
+        public const string k_RosMessageName = "uc2_vision_msgs/Point2D";
         public override string RosMessageName => k_RosMessageName;
 
         public double x;

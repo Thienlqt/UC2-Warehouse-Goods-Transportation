@@ -10,7 +10,7 @@ namespace RosMessageTypes.Vision
     [Serializable]
     public class ObjectHypothesisWithPoseMsg : Message
     {
-        public const string k_RosMessageName = "vision_msgs/ObjectHypothesisWithPose";
+        public const string k_RosMessageName = "uc2_vision_msgs/ObjectHypothesisWithPose";
         public override string RosMessageName => k_RosMessageName;
 
         //  An object hypothesis that contains pose information.

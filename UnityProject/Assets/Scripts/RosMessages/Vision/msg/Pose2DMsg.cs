@@ -10,7 +10,7 @@ namespace RosMessageTypes.Vision
     [Serializable]
     public class Pose2DMsg : Message
     {
-        public const string k_RosMessageName = "vision_msgs/Pose2D";
+        public const string k_RosMessageName = "uc2_vision_msgs/Pose2D";
         public override string RosMessageName => k_RosMessageName;
 
         public Point2DMsg position;

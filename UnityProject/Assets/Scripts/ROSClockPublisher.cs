@@ -58,11 +58,7 @@ public class ROSClockPublisher : MonoBehaviour
     void PublishMessage()
     {
         var publishTime = Clock.time;
-        var clockMsg = new TimeMsg
-        {
-            sec = (int)publishTime,
-            nanosec = (uint)((publishTime - Math.Floor(publishTime)) * Clock.k_NanoSecondsInSeconds)
-        };
+        var clockMsg = new ClockMsg(new TimeStamp(publishTime));
         m_LastPublishTimeSeconds = publishTime;
         m_ROS.Publish("clock", clockMsg);
     }
