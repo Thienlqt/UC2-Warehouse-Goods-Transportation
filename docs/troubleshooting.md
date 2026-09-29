@@ -1,49 +1,60 @@
 # Troubleshooting
 
 "ROS shell" below means: macOS `docker exec -it -u ubuntu -e HOME=/home/ubuntu unity-nav2 bash`
-then `source ~/colcon_ws/install/setup.bash`; Ubuntu / WSL a new terminal with
-`source ~/uc2_ws/install/setup.bash`. Source `/opt/ros/jazzy/setup.bash` first in both.
+(its `.bashrc` sources the workspace); Ubuntu / WSL a new terminal with
+`source /opt/ros/noetic/setup.bash && source ~/uc2_ws/devel/setup.bash`.
 
 ## The robot ignores goals
 
 - **Play was restarted while ROS kept running.** Unity's `/clock` restarts at 0, but SLAM keeps
   publishing `map -> odom` from the old session. The planner logs "extrapolation into the past".
   Restart the ROS side (`docker stop unity-nav2` + start script, or Ctrl+C + `run_ros.sh`), then Play.
-- **Nav2 is not active yet.** The log should contain `lifecycle_manager_unity: Managed nodes are
-  active` a few seconds after Play. It waits for Unity's TF, up to an hour after launch.
+- **move_base is still waiting for TF.** Until slam_toolbox publishes `map -> odom` (shortly after
+  Play), move_base logs `Timed out waiting for transform from base_link to map` and accepts no
+  goals. It keeps waiting, however long Unity takes.
+- **cmd_vel_guard is holding the robot.** `No fresh /scan in 1.0 s: holding the robot still` means
+  the lidar stopped; the guard sends zero velocity until `/scan` is back. Compare
+  `rostopic echo /cmd_vel_nav` (move_base) with `/cmd_vel` (after the guard): near obstacles the
+  guard slows the command on purpose.
 - **Robot controller mode.** On `TurtleBot3ManualConfig`, the AGV Controller must be in ROS mode,
-  and first-person driving (**P**) must be off: while driving, Nav2's `cmd_vel` is ignored.
+  and first-person driving (**P**) must be off: while driving, `/cmd_vel` is ignored.
 - Goals must be in known free space on the map. Start with a route of a few metres.
 
 ## Unity does not connect (red arrows in the Game view)
 
 - The ROS side must be running first and log `Starting server on 0.0.0.0:10000`.
-- **Robotics → ROS Settings**: ROS2, `127.0.0.1`, port 10000.
+- **Robotics → ROS Settings**: ROS1, `127.0.0.1`, port 10000. If it shows ROS2, you are on a
+  checkout of `main` (ROS 2) or the project settings were not reloaded: reopen the project.
 - macOS: port 10000 must be free (`lsof -i :10000`) and the container running (`docker ps`).
 - WSL: see "If something is wrong" in [setup_windows_wsl.md](setup_windows_wsl.md) (WSL IP or
   mirrored networking, firewall).
 
-## Topics look missing ("Unknown topic", 0 messages)
+## Topics look missing ("Unable to communicate with master", 0 messages)
 
-- On macOS, open the ROS shell as `-u ubuntu`. As root, Fast DDS shared memory does not reach the
-  stack's nodes, so topics look empty.
+- `Unable to communicate with master`: the ROS side is not running, or the shell did not source
+  the setup files (see "ROS shell" above).
 - `/scan` exists as soon as SLAM subscribes, even before Unity publishes. Use
-  `ros2 topic info /scan --verbose` to check for a publisher, then `ros2 topic hz /scan`.
+  `rostopic info /scan` to check for a publisher, then `rostopic hz /scan`.
 
 ## Camera detection shows no boxes
 
 - The camera detector log line `Loaded .../models/detector.onnx (416 px, 3 classes)` confirms the
-  model. `No model at ...` means `ros2_ws/src/unity_slam_example/models/` is missing files.
+  model. `No model at ...` means `catkin_ws/src/unity_slam_example/models/` is missing files.
 - The model knows `box`, `shelf` and `station` only. It has no `person` class yet.
 - In Unity, **C** toggles the detection overlay. `waiting for /detections_2d` means no messages
   have arrived: check the ROS side.
 
 ## Python / dependency errors on Ubuntu or WSL
 
-- `numpy.core.multiarray failed to import` or a cv_bridge / SciPy crash: NumPy 2 got installed.
-  Rerun `bash scripts/setup_ubuntu.sh`, which pins `numpy<2` (apt's SciPy and cv_bridge need 1.x).
-- `package 'ros_tcp_endpoint' not found`: build with `bash scripts/run_ros.sh`, which builds both
-  packages in `ros2_ws/src`.
+- `module compiled against API version 0xe but this version of numpy is 0xd` when importing
+  onnxruntime: apt's NumPy 1.17 is still the one in use. Rerun `bash scripts/setup_ubuntu.sh`,
+  which upgrades NumPy for your user.
+- `module 'numpy' has no attribute 'bool'` from SciPy (tracking, fusion): NumPy 1.24 or newer got
+  installed. apt's SciPy 1.3 needs NumPy below 1.24; the setup script pins `>=1.21.6,<1.24`.
+- `package 'ros_tcp_endpoint' not found` or `uc2_vision_msgs` import errors: build with
+  `bash scripts/run_ros.sh`, which builds all packages in `catkin_ws/src`.
+- `/usr/bin/env: 'python': No such file or directory` from a vendored script: Ubuntu 20.04 has
+  only `python3`. This repository's copy of the endpoint already uses `python3`.
 - Line-ending errors such as `$'\r': command not found`: the clone was converted to CRLF. Run
   `git config --global core.autocrlf false` in Windows, delete the clone and clone again.
 

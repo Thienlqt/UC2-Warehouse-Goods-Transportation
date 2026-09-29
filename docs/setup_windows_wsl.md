@@ -1,11 +1,11 @@
-# Setup: Windows + WSL2 (Ubuntu 24.04, ROS 2 Jazzy)
+# Setup: Windows + WSL2 (Ubuntu 20.04, ROS 1 Noetic)
 
-Unity runs on **Windows**. ROS 2 Jazzy (Nav2, SLAM, perception, RViz) runs natively in **WSL2
-Ubuntu 24.04**. They talk over TCP port 10000. No Docker is needed. These steps also work on a
-native Ubuntu 24.04 machine: skip the Windows-only parts.
+Unity runs on **Windows**. ROS 1 Noetic (move_base, SLAM, perception, RViz) runs natively in
+**WSL2 Ubuntu 20.04**. They talk over TCP port 10000. No Docker is needed. The same scripts run
+on a native Ubuntu 20.04 machine (not a tested setup): skip the Windows-only parts.
 
 ```text
-Windows: Unity (SimpleWarehouseScene) --TCP 127.0.0.1:10000--> WSL2: ros_tcp_endpoint -> Nav2 / SLAM / perception / RViz
+Windows: Unity (SimpleWarehouseScene) --TCP 127.0.0.1:10000--> WSL2: ros_tcp_endpoint -> move_base / SLAM / perception / RViz
 ```
 
 ## 1. Windows side (once)
@@ -28,11 +28,14 @@ Windows: Unity (SimpleWarehouseScene) --TCP 127.0.0.1:10000--> WSL2: ros_tcp_end
 
 ## 2. WSL side (once)
 
-1. WSL2 with Ubuntu 24.04 and ROS 2 Jazzy (`ros-jazzy-desktop`, see the
-   [Jazzy install guide](https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html)).
-   Keep WSL current for GUI apps (WSLg): `wsl --update` in PowerShell.
-2. Install this project's dependencies (Nav2, SLAM Toolbox, vision_msgs, OpenCV, SciPy,
-   ONNX Runtime, NumPy 1.x):
+1. WSL2 with Ubuntu 20.04: `wsl --install -d Ubuntu-20.04` in PowerShell. Keep WSL current
+   for GUI apps (WSLg, Windows 11): `wsl --update`.
+2. ROS 1 Noetic (`ros-noetic-desktop`), following the
+   [Noetic install guide](https://wiki.ros.org/noetic/Installation/Ubuntu). The ROS apt signing
+   key changed in 2025: if `apt-get update` reports an expired or missing key, set up the ROS apt
+   source with the `ros-apt-source` package as described on <https://docs.ros.org/>.
+3. Install this project's dependencies (move_base, DWA, SLAM Toolbox, OpenCV, SciPy,
+   ONNX Runtime, NumPy 1.2x):
    ```bash
    cd /mnt/c/dev/UC2-Warehouse-Goods-Transportation
    bash scripts/setup_ubuntu.sh
@@ -45,7 +48,7 @@ Unity Hub → **Add** → **Add project from disk** → `C:\dev\UC2-Warehouse-Go
 The first open imports everything and downloads the git packages: allow **10–20 minutes**.
 Then open `Assets/Scenes/SimpleWarehouseScene`. The Console should show no red errors.
 
-Check **Robotics → ROS Settings**: Protocol **ROS2**, ROS IP Address **127.0.0.1**, port **10000**.
+Check **Robotics → ROS Settings**: Protocol **ROS1**, ROS IP Address **127.0.0.1**, port **10000**.
 
 ## 4. Run (every time)
 
@@ -54,15 +57,16 @@ Check **Robotics → ROS Settings**: Protocol **ROS2**, ROS IP Address **127.0.0
    cd /mnt/c/dev/UC2-Warehouse-Goods-Transportation
    bash scripts/run_ros.sh
    ```
-   It builds `ros2_ws` into `~/uc2_ws` (on the Linux filesystem, so builds stay fast), then
-   starts Nav2, SLAM, the perception nodes and RViz. RViz opens as a normal window.
+   It builds `catkin_ws` into `~/uc2_ws` (on the Linux filesystem, so builds stay fast; its `src`
+   links back to the repository), then starts move_base, SLAM, the perception nodes and RViz.
+   RViz opens as a normal window.
 2. In Unity, press **Play**. The ROS connection arrows in the Game view turn blue, and RViz shows
    the map growing, the laser scan and the camera detections.
-3. In RViz, use **2D Goal Pose** to send the robot somewhere in known free space.
+3. In RViz, use **2D Nav Goal** to send the robot somewhere in known free space.
 4. **After stopping Play, stop `run_ros.sh` (Ctrl+C) and start it again before the next Play.**
    Unity's clock restarts at 0, and a running ROS stack would reject the new timestamps.
 
-Launch options go straight to `ros2 launch`, for example `bash scripts/run_ros.sh rviz:=false`
+Launch options go straight to `roslaunch`, for example `bash scripts/run_ros.sh rviz:=false`
 or `perception:=false`.
 
 ## If something is wrong
@@ -82,8 +86,8 @@ or `perception:=false`.
 ## Tests
 
 ```bash
-source ~/uc2_ws/install/setup.bash
-cd ros2_ws/src/unity_slam_example
+source ~/uc2_ws/devel/setup.bash
+cd catkin_ws/src/unity_slam_example
 python3 -m pytest -q test/
-ROS_DOMAIN_ID=77 python3 test/check_obstacle_costmap.py   # isolated domain; never while Unity runs
+python3 test/check_obstacle_costmap.py   # starts move_base on its own ROS master (port 11312)
 ```

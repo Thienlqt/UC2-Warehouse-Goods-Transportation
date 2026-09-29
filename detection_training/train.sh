@@ -3,7 +3,7 @@
 #   1. Unity: Robotics > Detection Dataset > Capture Full Dataset  (writes detection_training/dataset)
 #   2. bash detection_training/train.sh [epochs]
 # Uses the Apple GPU (MPS) or CUDA when available. Installs the model into the ROS package
-# (ros2_ws/src/unity_slam_example/models); commit it, then restart the ROS stack to load it.
+# (catkin_ws/src/unity_slam_example/models); commit it, then restart the ROS stack to load it.
 set -euo pipefail
 
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -11,7 +11,7 @@ repo="$(dirname "$here")"
 epochs="${1:-60}"
 venv="$here/.venv"
 data="$here/dataset/data.yaml"
-models="$repo/ros2_ws/src/unity_slam_example/models"
+models="$repo/catkin_ws/src/unity_slam_example/models"
 
 [ -f "$data" ] || { echo "No $data: capture the dataset in Unity first." >&2; exit 1; }
 if [ ! -x "$venv/bin/yolo" ]; then

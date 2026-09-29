@@ -7,7 +7,7 @@ using UnityEngine.Rendering;
 /// Press ToggleKey (P) to drive the robot from the keyboard, seen through its own camera.
 /// Put it on the robot root next to AGVController. While driving, the Game view renders from the
 /// RosCameraSensor's pose with the same vertical FOV, the robot's meshes are hidden from that view
-/// only (the ROS camera and physics are unaffected), and cmd_vel from Nav2 is ignored.
+/// only (the ROS camera and physics are unaffected), and cmd_vel from ROS navigation is ignored.
 /// Keys: W/S or Up/Down drive, A/D or Left/Right turn. The Game view needs keyboard focus.
 /// </summary>
 public class FirstPersonDrive : MonoBehaviour

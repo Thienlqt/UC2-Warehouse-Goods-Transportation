@@ -1,34 +1,36 @@
-# Ubuntu 24.04 + ROS 2 Jazzy desktop with noVNC (MATE on display :1, noVNC on port 80).
+# Ubuntu 20.04 + ROS 1 Noetic desktop with noVNC (display :1, noVNC on port 80).
 # Multi-arch base (amd64/arm64): builds natively on Apple Silicon, no emulation.
-# Dependencies only: start-navigation.sh copies ros2_ws/src in and builds it at start-up,
+# Dependencies only: start-navigation.sh copies catkin_ws/src in and builds it at start-up,
 # so code changes never need an image rebuild. Build once with:
-#   docker build -t unity-robotics:jazzy docker
-FROM tiryoh/ros2-desktop-vnc:jazzy
+#   docker build -t unity-robotics:noetic docker
+FROM tiryoh/ros-desktop-vnc:noetic
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Keep this package list in sync with scripts/setup_ubuntu.sh (native Ubuntu / WSL).
 RUN apt-get update -q && \
     apt-get install -y --no-install-recommends \
-        ros-jazzy-navigation2 \
-        ros-jazzy-nav2-bringup \
-        ros-jazzy-slam-toolbox \
-        ros-jazzy-vision-msgs \
-        ros-jazzy-cv-bridge \
+        ros-noetic-move-base \
+        ros-noetic-navfn \
+        ros-noetic-dwa-local-planner \
+        ros-noetic-slam-toolbox \
+        ros-noetic-cv-bridge \
+        ros-noetic-tf2-ros \
+        ros-noetic-rviz \
         python3-opencv \
         python3-scipy \
         python3-pytest \
         python3-pip \
-        python3-colcon-common-extensions \
     && rm -rf /var/lib/apt/lists/*
-# Ubuntu 24.04 marks the system Python as externally managed (PEP 668). The base image ships
-# NumPy 2 in /usr/local, but SciPy and cv_bridge from apt are built against NumPy 1.x.
-RUN pip3 install --break-system-packages --no-cache-dir onnxruntime "numpy<2" && \
-    bash -c "source /opt/ros/jazzy/setup.bash && python3 -c \
+# Python 3.8: onnxruntime <1.20 still ships Python 3.8 wheels (1.16.3 is the newest on arm64).
+# It needs a newer NumPy than apt's 1.17; stay below 1.24, which removed aliases apt's SciPy 1.3
+# still uses (np.bool in linear_sum_assignment).
+RUN pip3 install --no-cache-dir --upgrade "onnxruntime<1.20" "numpy>=1.21.6,<1.24" && \
+    bash -c "source /opt/ros/noetic/setup.bash && python3 -c \
         'import numpy, scipy.optimize, cv_bridge, onnxruntime; assert numpy.__version__.startswith(\"1.\")'"
 
 # The base image already has the `ubuntu` user (uid 1000); its entrypoint sets up the desktop.
-RUN echo '[ -f ~/colcon_ws/install/local_setup.bash ] && source ~/colcon_ws/install/local_setup.bash' \
+RUN echo '[ -f ~/catkin_ws/devel/setup.bash ] && source ~/catkin_ws/devel/setup.bash' \
         >> /home/ubuntu/.bashrc
 
 ENV TURTLEBOT3_MODEL=waffle

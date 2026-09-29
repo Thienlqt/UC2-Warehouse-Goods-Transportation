@@ -1,6 +1,6 @@
 # Obstacle detection: camera + lidar boxes, labels and confidence
 
-Nav2 still avoids obstacles from the raw `/scan` ([obstacle_avoidance.md](obstacle_avoidance.md)).
+move_base still avoids obstacles from the raw `/scan` ([obstacle_avoidance.md](obstacle_avoidance.md)).
 This layer adds **perception**: oriented boxes around obstacles with a **class name** and a
 **confidence score**, from the robot's camera and 2D lidar.
 
@@ -13,6 +13,10 @@ Unity lidar  --/scan 10 Hz--> lidar_obstacles (segments -> L-shape boxes -> Kalm
                                          \--> /obstacles (named, scored 3D boxes)
                                          \--> /obstacles_markers (RViz boxes + labels)
 ```
+
+The detection topics use `uc2_vision_msgs` (`catkin_ws/src/uc2_vision_msgs`): the ROS 2
+`vision_msgs` 4.x layout with string class ids and track ids, which Noetic's own `vision_msgs`
+lacks. Fields match the ROS 2 `main` branch; only the package name differs.
 
 | Stage | Algorithm | Why |
 |---|---|---|
@@ -34,7 +38,7 @@ Confidence scores:
 
 ### 1. Model
 
-The trained model is committed in `ros2_ws/src/unity_slam_example/models/` (`detector.onnx`
+The trained model is committed in `catkin_ws/src/unity_slam_example/models/` (`detector.onnx`
 and `classes.txt`, about 12 MB) and installed with the package, so a fresh clone detects out of
 the box on every OS. Retrain only when the scene or the classes change, as below.
 
@@ -63,7 +67,7 @@ It scores the scene's pallet boxes at 0.03 and misreads a close pallet as `bench
 2. `bash detection_training/train.sh [epochs, default 60]` creates `detection_training/.venv`
    (Python 3.13 if installed, else `python3`; Ultralytics). It trains at 416 px on the Apple GPU
    (MPS), CUDA (for example an NVIDIA GPU under WSL) or the CPU, and exports ONNX. It then
-   replaces `ros2_ws/src/unity_slam_example/models/detector.onnx` and `classes.txt`.
+   replaces `catkin_ws/src/unity_slam_example/models/detector.onnx` and `classes.txt`.
    Commit both files, then restart the ROS stack to load the new model.
 
 `person` returns when pedestrians are added to the warehouse. Append it to `Classes` in
@@ -101,34 +105,33 @@ The robot prefab carries two more components (on `TurtleBot3ManualConfig`, next 
   `no detections received recently` if messages stop, for example after the ROS stack is stopped.
 - **First Person Drive**: **P** switches to driving. The Game view then renders from the robot
   camera's pose and vertical FOV, with the robot hidden from that view only. **W/S** (or Up/Down)
-  drive and **A/D** (or Left/Right) turn. Nav2's `cmd_vel` is ignored until **P** is pressed again.
+  drive and **A/D** (or Left/Right) turn. ROS `/cmd_vel` is ignored until **P** is pressed again.
   The free camera is paused while driving. The boxes are drawn full screen, and a faint frame marks
   the 4:3 region the detector sees, because a wider Game view shows more at the sides.
 
 Click the Game view first so it has keyboard focus. Boxes arrive one inference later (~0.1 s on
 CPU), so they trail fast turns slightly.
 
-Turn perception off with `ros2 launch unity_slam_example unity_slam_example.py perception:=false`.
-Tuning lives in `ros2_ws/src/unity_slam_example/config/perception.yaml`.
+Turn perception off with `bash scripts/run_ros.sh perception:=false` (Ubuntu / WSL).
+Tuning lives in `catkin_ws/src/unity_slam_example/config/perception.yaml`.
 
 ## Checks
 
 Open a ROS shell: on macOS `docker exec -it -u ubuntu -e HOME=/home/ubuntu unity-nav2 bash`;
-on Ubuntu / WSL a new terminal with `source ~/uc2_ws/install/setup.bash`.
+on Ubuntu / WSL a new terminal with `source /opt/ros/noetic/setup.bash && source ~/uc2_ws/devel/setup.bash`.
 
 ```bash
-source /opt/ros/jazzy/setup.bash
-ros2 topic hz /camera/image_raw/compressed   # target 30
-ros2 topic hz /detections_2d                 # target 30
+rostopic hz /camera/image_raw/compressed   # target 30
+rostopic hz /detections_2d                 # target 30
 ```
 
 `camera_detector` logs its FPS and per-stage timings every 5 s: in the `run_ros.sh` terminal, or
-on macOS with `docker exec unity-nav2 grep camera_detector /tmp/unity-navigation.log | tail -3`.
+on macOS with `docker exec unity-nav2 grep FPS /tmp/unity-navigation.log | tail -3`.
 
 Unit tests (segmentation, box fitting, tracking, YOLO decoding, fusion geometry):
 
 ```bash
-cd ros2_ws/src/unity_slam_example && python3 -m pytest -q test/
+cd catkin_ws/src/unity_slam_example && python3 -m pytest -q test/
 ```
 
 ## Limits

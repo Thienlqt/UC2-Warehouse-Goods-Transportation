@@ -16,16 +16,18 @@ UnityProject/UserSettings/
 *.csproj
 *.sln
 
-# ROS 2 / colcon (scripts/run_ros.sh builds in ~/uc2_ws; these cover a build run in ros2_ws)
-ros2_ws/build/
-ros2_ws/install/
-ros2_ws/log/
+# ROS 1 / catkin (scripts/run_ros.sh builds in ~/uc2_ws, whose src links to catkin_ws/src;
+# catkin_make then adds the top-level CMakeLists.txt link here). Also covers a build run in catkin_ws.
+catkin_ws/src/CMakeLists.txt
+catkin_ws/build/
+catkin_ws/devel/
+catkin_ws/install/
 __pycache__/
 *.pyc
 .pytest_cache/
 
 # Detector training: venv, generated dataset, runs and weights. The exported model is
-# committed in ros2_ws/src/unity_slam_example/models/.
+# committed in catkin_ws/src/unity_slam_example/models/.
 detection_training/.venv/
 detection_training/dataset*/
 detection_training/runs/

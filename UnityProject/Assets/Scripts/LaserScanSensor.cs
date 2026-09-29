@@ -165,7 +165,7 @@ public class LaserScanSensor : MonoBehaviour
             }
             else
             {
-                // Nav2's inf_is_valid scan option uses these rays to clear free space.
+                // The costmap's inf_is_valid scan option uses these rays to clear free space.
                 ranges.Add(float.PositiveInfinity);
             }
 
