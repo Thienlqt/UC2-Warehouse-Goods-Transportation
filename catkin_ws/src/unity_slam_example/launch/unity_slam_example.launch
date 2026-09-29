@@ -1,0 +1,56 @@
+<launch>
+  <!-- ROS 1 Noetic: Unity TCP endpoint, slam_toolbox, move_base + cmd_vel_guard, perception, RViz.
+       Unity publishes /clock, /tf (odom -> base_footprint -> ...), /scan and the camera. -->
+  <arg name="params_file" default="$(find unity_slam_example)/config/move_base.yaml"
+       doc="move_base parameters for the Unity robot"/>
+  <arg name="rviz" default="true"/>
+  <arg name="perception" default="true"
+       doc="Camera + lidar obstacle detection (boxes, labels, confidence)"/>
+  <arg name="publish_sim_odom" default="true"
+       doc="Derive simulated odometry from Unity TF; disable if another node publishes /odom"/>
+
+  <param name="/use_sim_time" value="true"/>
+
+  <!-- 0.0.0.0 so Unity can connect from outside a Docker container or WSL. -->
+  <param name="/ROS_IP" value="0.0.0.0"/>
+  <param name="/ROS_TCP_PORT" value="10000"/>
+  <node pkg="ros_tcp_endpoint" type="default_server_endpoint.py" name="server_endpoint"
+        args="--wait" output="screen" respawn="true"/>
+
+  <node pkg="slam_toolbox" type="async_slam_toolbox_node" name="slam_toolbox" output="screen">
+    <rosparam command="load" file="$(find unity_slam_example)/config/slam_toolbox.yaml"/>
+  </node>
+
+  <!-- move_base -> /cmd_vel_nav -> cmd_vel_guard -> /cmd_vel (Unity AGVController). -->
+  <node pkg="move_base" type="move_base" name="move_base" output="screen">
+    <rosparam command="load" file="$(arg params_file)"/>
+    <remap from="cmd_vel" to="cmd_vel_nav"/>
+  </node>
+  <node pkg="unity_slam_example" type="cmd_vel_guard" name="cmd_vel_guard" output="screen">
+    <param name="robot_radius" value="0.22"/>  <!-- keep equal to the costmaps' robot_radius -->
+    <param name="time_before_collision" value="1.2"/>
+    <param name="simulation_time_step" value="0.1"/>
+    <param name="min_points" value="6"/>
+    <param name="source_timeout" value="1.0"/>
+  </node>
+
+  <node pkg="unity_slam_example" type="tf_odometry" name="unity_tf_odometry" output="screen"
+        if="$(arg publish_sim_odom)"/>
+
+  <!-- Robot camera (Unity RosCameraSensor): TurtleBot3 Waffle RealSense mount, then the
+       optical frame convention (z forward, x right, y down). Args: x y z yaw pitch roll. -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="camera_link_tf"
+        args="0.064 -0.065 0.094 0 0 0 base_link camera_link"/>
+  <node pkg="tf2_ros" type="static_transform_publisher" name="camera_optical_tf"
+        args="0 0 0 -1.5707963 0 -1.5707963 camera_link camera_rgb_optical_frame"/>
+
+  <group if="$(arg perception)">
+    <rosparam command="load" file="$(find unity_slam_example)/config/perception.yaml"/>
+    <node pkg="unity_slam_example" type="lidar_obstacles" name="lidar_obstacles" output="screen"/>
+    <node pkg="unity_slam_example" type="camera_detector" name="camera_detector" output="screen"/>
+    <node pkg="unity_slam_example" type="obstacle_fusion" name="obstacle_fusion" output="screen"/>
+  </group>
+
+  <node pkg="rviz" type="rviz" name="rviz" if="$(arg rviz)"
+        args="-d $(find unity_slam_example)/rviz/nav_unity.rviz"/>
+</launch>

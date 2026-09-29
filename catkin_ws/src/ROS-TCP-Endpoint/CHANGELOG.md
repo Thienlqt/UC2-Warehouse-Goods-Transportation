@@ -14,6 +14,9 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/) a
 
 ### Changed
 
+- UC2 vendored copy of v0.6.0: `default_server_endpoint.py` runs with `python3` instead of
+  `python`, which Ubuntu 20.04 does not provide.
+
 ### Deprecated
 
 ### Removed

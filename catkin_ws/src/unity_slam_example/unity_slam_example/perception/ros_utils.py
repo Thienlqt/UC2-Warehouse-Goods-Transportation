@@ -14,4 +14,4 @@ def quaternion_to_yaw(q):
 
 
 def stamp_to_seconds(stamp):
-    return stamp.sec + stamp.nanosec * 1e-9
+    return stamp.to_sec()

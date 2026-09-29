@@ -5,12 +5,10 @@ import time
 
 import cv2
 import numpy as np
-import rclpy
-from ament_index_python.packages import get_package_share_directory
-from rclpy.node import Node
-from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+import rospkg
+import rospy
 from sensor_msgs.msg import CompressedImage, Image
-from vision_msgs.msg import Detection2D, Detection2DArray, ObjectHypothesisWithPose
+from uc2_vision_msgs.msg import Detection2D, Detection2DArray, ObjectHypothesisWithPose
 
 from .yolo import load_class_names, YoloDetector
 
@@ -33,36 +31,35 @@ def draw(image, detections, names):
     return image
 
 
-class CameraDetector(Node):
+class CameraDetector:
     def __init__(self):
-        super().__init__('camera_detector')
-        # Default: the model installed with this package (ros2_ws/src/unity_slam_example/models).
-        models = os.path.join(get_package_share_directory('unity_slam_example'), 'models')
-        model = self.declare_parameter('model_path', os.path.join(models, 'detector.onnx')).value
-        classes = self.declare_parameter('classes_path', os.path.join(models, 'classes.txt')).value
-        self.conf = self.declare_parameter('conf_threshold', 0.35).value
-        self.iou = self.declare_parameter('iou_threshold', 0.5).value
-        threads = self.declare_parameter('threads', 4).value
-        self.publish_image = self.declare_parameter('publish_annotated_image', True).value
+        # Default: the model shipped with this package (catkin_ws/src/unity_slam_example/models).
+        models = os.path.join(rospkg.RosPack().get_path('unity_slam_example'), 'models')
+        model = rospy.get_param('~model_path', os.path.join(models, 'detector.onnx'))
+        classes = rospy.get_param('~classes_path', os.path.join(models, 'classes.txt'))
+        self.conf = rospy.get_param('~conf_threshold', 0.35)
+        self.iou = rospy.get_param('~iou_threshold', 0.5)
+        threads = rospy.get_param('~threads', 4)
+        self.publish_image = rospy.get_param('~publish_annotated_image', True)
 
         self.detector = None
         if os.path.exists(model) and os.path.exists(classes):
             self.detector = YoloDetector(model, threads)
             self.names = load_class_names(classes)
-            self.get_logger().info('Loaded %s (%d px, %d classes) on %s' % (
+            rospy.loginfo('Loaded %s (%d px, %d classes) on %s' % (
                 model, self.detector.size, len(self.names), self.detector.provider))
         else:
-            self.get_logger().error('No model at %s / %s: camera detection disabled. See '
-                                    'docs/obstacle_detection.md.' % (model, classes))
+            rospy.logerr('No model at %s / %s: camera detection disabled. See '
+                         'docs/obstacle_detection.md.' % (model, classes))
 
-        self.det_pub = self.create_publisher(Detection2DArray, '/detections_2d', 10)
-        self.img_pub = self.create_publisher(Image, '/detections_image', 1)
-        # Newest frame only: never queue stale images behind a slow inference.
-        qos = QoSProfile(depth=1, history=HistoryPolicy.KEEP_LAST,
-                         reliability=ReliabilityPolicy.BEST_EFFORT)
-        self.create_subscription(CompressedImage, '/camera/image_raw/compressed', self.on_image, qos)
+        self.det_pub = rospy.Publisher('/detections_2d', Detection2DArray, queue_size=10)
+        self.img_pub = rospy.Publisher('/detections_image', Image, queue_size=1)
         self.timings = []
-        self.create_timer(5.0, self.report)
+        # Newest frame only: never queue stale images behind a slow inference. The large
+        # buff_size keeps rospy from reading old frames out of its socket buffer first.
+        rospy.Subscriber('/camera/image_raw/compressed', CompressedImage, self.on_image,
+                         queue_size=1, buff_size=2 ** 24)
+        rospy.Timer(rospy.Duration(5.0), lambda _: self.report())
 
     def on_image(self, msg):
         if self.detector is None:
@@ -91,7 +88,7 @@ class CameraDetector(Node):
             out.detections.append(det)
         self.det_pub.publish(out)
 
-        if self.publish_image and self.img_pub.get_subscription_count() > 0:
+        if self.publish_image and self.img_pub.get_num_connections() > 0:
             draw(image, detections, self.names)
             img = Image(header=msg.header, height=image.shape[0], width=image.shape[1],
                         encoding='bgr8', is_bigendian=0, step=image.shape[1] * 3,
@@ -103,21 +100,14 @@ class CameraDetector(Node):
         if not self.timings:
             return
         t = np.array(self.timings) * 1000
-        self.get_logger().info(
+        rospy.loginfo(
             '%.1f FPS | decode %.1f ms, inference %.1f ms, total %.1f ms (p95 %.1f)' % (
                 len(t) / 5.0, t[:, 0].mean(), t[:, 1].mean(), t[:, 2].mean(),
                 np.percentile(t[:, 2], 95)))
         self.timings.clear()
 
 
-def main(args=None):
-    rclpy.init(args=args)
-    node = CameraDetector()
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+def main():
+    rospy.init_node('camera_detector')
+    CameraDetector()
+    rospy.spin()

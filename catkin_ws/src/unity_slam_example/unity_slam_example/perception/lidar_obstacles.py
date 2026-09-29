@@ -3,44 +3,39 @@
 Every box is class "obstacle" with a geometric confidence; the fusion node adds camera labels.
 """
 
-import rclpy
-from rclpy.duration import Duration
-from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
-from rclpy.time import Time
+import rospy
 from sensor_msgs.msg import LaserScan
 from tf2_ros import Buffer, TransformException, TransformListener
-from vision_msgs.msg import Detection3D, Detection3DArray, ObjectHypothesisWithPose
+from uc2_vision_msgs.msg import Detection3D, Detection3DArray, ObjectHypothesisWithPose
 
 from .lidar_segmentation import detect_boxes
 from .ros_utils import quaternion_to_yaw, stamp_to_seconds, yaw_to_quaternion
 from .tracking import boxes_to_frame, Tracker
 
 
-class LidarObstacles(Node):
+class LidarObstacles:
     def __init__(self):
-        super().__init__('lidar_obstacles')
-        self.fixed_frame = self.declare_parameter('fixed_frame', 'odom').value
-        self.max_extent = self.declare_parameter('max_extent', 3.0).value
-        self.box_height = self.declare_parameter('box_height', 0.5).value
+        self.fixed_frame = rospy.get_param('~fixed_frame', 'odom')
+        self.max_extent = rospy.get_param('~max_extent', 3.0)
+        self.box_height = rospy.get_param('~box_height', 0.5)
         self.segment_args = {
-            'breakpoint_angle_deg': self.declare_parameter('breakpoint_angle_deg', 10.0).value,
-            'sigma': self.declare_parameter('sigma', 0.03).value,
-            'min_points': self.declare_parameter('min_points', 3).value,
+            'breakpoint_angle_deg': rospy.get_param('~breakpoint_angle_deg', 10.0),
+            'sigma': rospy.get_param('~sigma', 0.03),
+            'min_points': rospy.get_param('~min_points', 3),
         }
-        self.tracker = Tracker(gate=self.declare_parameter('track_gate', 0.6).value,
-                               max_misses=self.declare_parameter('max_misses', 3).value)
+        self.tracker = Tracker(gate=rospy.get_param('~track_gate', 0.6),
+                               max_misses=rospy.get_param('~max_misses', 3))
         self.buffer = Buffer()
-        self.listener = TransformListener(self.buffer, self)
-        self.publisher = self.create_publisher(Detection3DArray, '/obstacles_lidar', 10)
-        self.create_subscription(LaserScan, '/scan', self.on_scan, qos_profile_sensor_data)
+        self.listener = TransformListener(self.buffer)
+        self.publisher = rospy.Publisher('/obstacles_lidar', Detection3DArray, queue_size=10)
+        rospy.Subscriber('/scan', LaserScan, self.on_scan, queue_size=5)
 
     def lookup(self, scan):
         """Sensor pose in the fixed frame at the scan time (latest if not yet available)."""
-        for when in (Time.from_msg(scan.header.stamp), Time()):
+        for when in (scan.header.stamp, rospy.Time(0)):
             try:
                 return self.buffer.lookup_transform(self.fixed_frame, scan.header.frame_id, when,
-                                                    Duration(seconds=0.05))
+                                                    rospy.Duration(0.05))
             except TransformException:
                 continue
         return None
@@ -81,14 +76,7 @@ class LidarObstacles(Node):
         self.publisher.publish(out)
 
 
-def main(args=None):
-    rclpy.init(args=args)
-    node = LidarObstacles()
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+def main():
+    rospy.init_node('lidar_obstacles')
+    LidarObstacles()
+    rospy.spin()

@@ -1,42 +1,56 @@
-"""Integration check against the installed Galactic controller (no Unity required).
+"""Integration check against the installed Noetic move_base (no Unity required).
 
-Run explicitly in an isolated container/domain after building the package:
+Starts its own ROS master on port 11312, so synthetic scans never reach a live robot graph.
+Run explicitly after building the workspace and sourcing devel/setup.bash:
   python3 test/check_obstacle_costmap.py
-Synthetic scans must never be published into the live robot's ROS graph.
 """
 
 import math
 import os
-from pathlib import Path
 import signal
 import subprocess
 import tempfile
 import time
 
-import rclpy
-from ament_index_python.packages import get_package_prefix, get_package_share_directory
-from geometry_msgs.msg import PoseStamped, TransformStamped, Twist
-from lifecycle_msgs.srv import ChangeState
-from nav2_msgs.action import FollowPath
-from nav_msgs.msg import OccupancyGrid, Odometry, Path as PathMsg
-from rclpy.action import ActionClient
-from rclpy.node import Node
-from sensor_msgs.msg import LaserScan
-from tf2_ros import TransformBroadcaster
-import yaml
+MASTER_PORT = 11312
+os.environ['ROS_MASTER_URI'] = 'http://localhost:%d' % MASTER_PORT
 
+import rospkg  # noqa: E402
+import rospy  # noqa: E402
+from actionlib_msgs.msg import GoalID  # noqa: E402
+from geometry_msgs.msg import PoseStamped, TransformStamped, Twist  # noqa: E402
+from nav_msgs.msg import OccupancyGrid, Odometry  # noqa: E402
+from sensor_msgs.msg import LaserScan  # noqa: E402
+from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster  # noqa: E402
 
 # Obstacle wall x in metres: the centre of a 5 cm costmap cell, not a cell
 # boundary, so float rounding cannot mark the neighbouring cell instead.
 OBSTACLE_X = 1.025
-ROBOT_RADIUS = 0.22  # Must match robot_radius in nav2_obstacle_avoidance.yaml.
+ROBOT_RADIUS = 0.22  # Must match robot_radius in config/move_base.yaml.
+
+LAUNCH = """<launch>
+  <param name="/use_sim_time" value="false"/>
+  <node pkg="move_base" type="move_base" name="move_base">
+    <rosparam command="load" file="{config}/move_base.yaml"/>
+    <remap from="cmd_vel" to="cmd_vel_nav"/>
+  </node>
+  <node pkg="unity_slam_example" type="cmd_vel_guard" name="cmd_vel_guard">
+    <param name="robot_radius" value="{radius}"/>
+  </node>
+  <node pkg="unity_slam_example" type="tf_odometry" name="unity_tf_odometry"/>
+</launch>
+"""
 
 
-class Fixture(Node):
+class Fixture:
     def __init__(self):
-        super().__init__('obstacle_test_fixture')
-        self.tf = TransformBroadcaster(self)
-        self.scan = self.create_publisher(LaserScan, '/scan', 10)
+        self.tf = TransformBroadcaster()
+        self.static_tf = StaticTransformBroadcaster()
+        self.scan = rospy.Publisher('/scan', LaserScan, queue_size=10)
+        self.map = rospy.Publisher('/map', OccupancyGrid, queue_size=1, latch=True)
+        self.goal = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=1)
+        self.cancel = rospy.Publisher('/move_base/cancel', GoalID, queue_size=1)
+        self.nav_cmd = rospy.Publisher('/cmd_vel_nav', Twist, queue_size=10)
         self.costmap = None
         self.odom = None
         self.commands = []
@@ -46,11 +60,25 @@ class Fixture(Node):
         self.velocity = (0.0, 0.0)
         self.wall_x = None
         self.last_step = time.monotonic()
-        self.create_subscription(OccupancyGrid, '/local_costmap/costmap',
-                                 self.on_costmap, 10)
-        self.create_subscription(Odometry, '/odom', self.on_odom, 10)
-        self.create_subscription(Twist, '/cmd_vel', self.on_cmd, 10)
-        self.create_timer(0.05, self.publish)
+        self.publish_static()
+        rospy.Subscriber('/move_base/local_costmap/costmap', OccupancyGrid, self.on_costmap)
+        rospy.Subscriber('/odom', Odometry, self.on_odom)
+        rospy.Subscriber('/cmd_vel', Twist, self.on_cmd)
+        rospy.Timer(rospy.Duration(0.05), lambda _: self.publish())
+
+    def publish_static(self):
+        # The global costmap needs a map and map -> odom (slam_toolbox's job in the real stack).
+        tf = TransformStamped()
+        tf.header.stamp, tf.header.frame_id, tf.child_frame_id = rospy.Time.now(), 'map', 'odom'
+        tf.transform.rotation.w = 1.0
+        self.static_tf.sendTransform(tf)
+        grid = OccupancyGrid()
+        grid.header.frame_id = 'map'
+        grid.info.resolution, grid.info.width, grid.info.height = 0.05, 400, 400
+        grid.info.origin.position.x = grid.info.origin.position.y = -10.0
+        grid.info.origin.orientation.w = 1.0
+        grid.data = [0] * (400 * 400)
+        self.map.publish(grid)
 
     def on_costmap(self, msg):
         self.costmap = msg
@@ -69,7 +97,7 @@ class Fixture(Node):
         self.x += vx * math.cos(self.yaw) * dt
         self.y += vx * math.sin(self.yaw) * dt
         self.yaw += wz * dt
-        stamp = self.get_clock().now().to_msg()
+        stamp = rospy.Time.now()
         transforms = []
         for parent, child, x, y, z, yaw in [
                 ('odom', 'base_link', self.x, self.y, 0.0, self.yaw),
@@ -83,6 +111,8 @@ class Fixture(Node):
             tf.transform.rotation.w = math.cos(yaw / 2.0)
             transforms.append(tf)
         self.tf.sendTransform(transforms)
+        if self.mode == 'silent':
+            return
         scan = LaserScan()
         scan.header.stamp, scan.header.frame_id = stamp, 'base_scan'
         scan.angle_min, scan.angle_max = 0.0, math.radians(359)
@@ -104,10 +134,10 @@ class Fixture(Node):
 
     def wait(self, predicate, seconds=15):
         deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline:
-            rclpy.spin_once(self, timeout_sec=0.05)
+        while time.monotonic() < deadline and not rospy.is_shutdown():
             if predicate():
                 return
+            time.sleep(0.05)
         raise AssertionError('Timed out waiting for ' + repr(predicate))
 
     def cost(self, x, y):
@@ -120,73 +150,43 @@ class Fixture(Node):
             return None
         return self.costmap.data[iy * info.width + ix]
 
-    def transition(self, transition_id):
-        client = self.create_client(ChangeState, '/controller_server/change_state')
-        self.wait(client.service_is_ready)
-        request = ChangeState.Request()
-        request.transition.id = transition_id
-        future = client.call_async(request)
-        self.wait(future.done)
-        assert future.result().success, 'Lifecycle transition failed'
-        self.destroy_client(client)
-
 
 def main():
-    rclpy.init()
-    fixture = Fixture()
-    processes = []
-    work = tempfile.mkdtemp(prefix='nav2-obstacle-check-')
+    work = tempfile.mkdtemp(prefix='move-base-obstacle-check-')
     log = open(os.path.join(work, 'nodes.log'), 'w')
+    config = os.path.join(rospkg.RosPack().get_path('unity_slam_example'), 'config')
+    launch = os.path.join(work, 'check.launch')
+    with open(launch, 'w') as f:
+        f.write(LAUNCH.format(config=config, radius=ROBOT_RADIUS))
+    # roslaunch starts the private master on MASTER_PORT (from ROS_MASTER_URI).
+    roslaunch = subprocess.Popen(['roslaunch', '-p', str(MASTER_PORT), launch],
+                                 stdout=log, stderr=log, start_new_session=True)
     try:
-        package = get_package_share_directory('unity_slam_example')
-        with open(os.path.join(package, 'config/nav2_obstacle_avoidance.yaml')) as f:
-            params = yaml.safe_load(f)
-
-        def wall_clock(value):
-            if isinstance(value, dict):
-                for key, child in value.items():
-                    if key == 'use_sim_time':
-                        value[key] = False
-                    else:
-                        wall_clock(child)
-        wall_clock(params)
-        config = os.path.join(work, 'params.yaml')
-        with open(config, 'w') as f:
-            yaml.safe_dump(params, f)
-        for package_name, executable, args in [
-                ('unity_slam_example', 'tf_odometry', []),
-                ('nav2_controller', 'controller_server', ['--ros-args', '--params-file', config])]:
-            binary = Path(get_package_prefix(package_name)) / 'lib' / package_name / executable
-            processes.append(subprocess.Popen([str(binary)] + args, stdout=log, stderr=log))
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                rospy.get_master().getSystemState()
+                break
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise AssertionError('No ROS master on port %d' % MASTER_PORT)
+                time.sleep(0.5)
+        rospy.init_node('obstacle_test_fixture', disable_signals=True)
+        fixture = Fixture()
         fixture.wait(lambda: fixture.odom is not None)
-        fixture.transition(1)  # configure
-        fixture.transition(3)  # activate
-        fixture.wait(lambda: fixture.cost(OBSTACLE_X, 0.0) == 100)
+        fixture.wait(lambda: fixture.cost(OBSTACLE_X, 0.0) == 100, seconds=45)
         print('PASS: laser obstacle marked lethal in local costmap', flush=True)
         fixture.mode = 'clear'
         fixture.wait(lambda: fixture.cost(OBSTACLE_X, 0.0) == 0)
         print('PASS: no-return rays clear the removed obstacle', flush=True)
 
-        action = ActionClient(fixture, FollowPath, '/follow_path')
-        fixture.wait(action.server_is_ready)
-        goal = FollowPath.Goal()
-        goal.controller_id = 'FollowPath'
-        goal.goal_checker_id = 'general_goal_checker'
-        goal.path = PathMsg()
-        goal.path.header.frame_id = 'odom'
-        goal.path.header.stamp = fixture.get_clock().now().to_msg()
-        for i in range(41):
-            pose = PoseStamped()
-            pose.header = goal.path.header
-            pose.pose.position.x = i * 0.05
-            pose.pose.orientation.w = 1.0
-            goal.path.poses.append(pose)
-        future = action.send_goal_async(goal)
-        fixture.wait(future.done)
-        handle = future.result()
-        assert handle.accepted
+        goal = PoseStamped()
+        goal.header.frame_id, goal.header.stamp = 'map', rospy.Time.now()
+        goal.pose.position.x = 2.0
+        goal.pose.orientation.w = 1.0
+        fixture.goal.publish(goal)
         fixture.wait(lambda: any(x > 0.02 for _, x, _ in fixture.commands))
-        print('PASS: DWB commands forward motion on a clear path', flush=True)
+        print('PASS: DWA commands forward motion on a clear path', flush=True)
         fixture.wall_x = fixture.x + 0.6
         fixture.mode = 'wall'
         blocked_at = time.monotonic()
@@ -200,24 +200,33 @@ def main():
         fixture.wait(stopped, seconds=45)
         hold_until = time.monotonic() + 3.0  # Keep checking: no creeping into the wall.
         while time.monotonic() < hold_until:
-            rclpy.spin_once(fixture, timeout_sec=0.05)
+            time.sleep(0.05)
             stopped()
-        print('PASS: DWB stops %.2f m short of a wall blocking the path (body clearance %.2f m)'
+        print('PASS: robot stops %.2f m short of a wall blocking the path (body clearance %.2f m)'
               % (closest[0], closest[0] - ROBOT_RADIUS), flush=True)
-        cancel = handle.cancel_goal_async()
-        fixture.wait(cancel.done)
+
+        fixture.cancel.publish(GoalID())
+        fixture.mode = 'silent'
+        time.sleep(1.5)                     # longer than the guard's 1.0 s source_timeout
+        sent = time.monotonic()
+        forward = Twist()
+        forward.linear.x = 0.2
+        for _ in range(5):
+            fixture.nav_cmd.publish(forward)
+            time.sleep(0.1)
+        fixture.wait(lambda: any(t > sent for t, _, _ in fixture.commands))
+        assert all(abs(x) < 1e-9 for t, x, _ in fixture.commands if t > sent), \
+            'Guard passed a command through without a fresh scan'
+        print('PASS: cmd_vel_guard holds the robot still when /scan stops', flush=True)
     finally:
-        for process in processes:
-            if process.poll() is None:
-                process.send_signal(signal.SIGINT)
-        for process in processes:
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-        fixture.destroy_node()
-        rclpy.shutdown()
+        rospy.signal_shutdown('done')
+        if roslaunch.poll() is None:
+            os.killpg(roslaunch.pid, signal.SIGINT)
+        try:
+            roslaunch.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            os.killpg(roslaunch.pid, signal.SIGKILL)
+            roslaunch.wait()
         log.close()
         print('Node logs: ' + work)
 

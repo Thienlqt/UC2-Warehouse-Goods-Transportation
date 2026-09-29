@@ -3,30 +3,27 @@
 <package format="3">
   <name>unity_slam_example</name>
   <version>0.0.1</version>
-  <description>Unity Robotics Nav2 SLAM Example</description>
+  <description>Unity Robotics SLAM + navigation example (ROS 1 Noetic)</description>
   <maintainer email="unity-robotics@unity3d.com">Unity Robotics</maintainer>
   <license>Apache 2.0</license>
 
-  <test_depend>ament_copyright</test_depend>
-  <test_depend>ament_flake8</test_depend>
-  <test_depend>ament_pep257</test_depend>
+  <buildtool_depend>catkin</buildtool_depend>
   <test_depend>python3-pytest</test_depend>
-  <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>move_base</exec_depend>
+  <exec_depend>navfn</exec_depend>
+  <exec_depend>dwa_local_planner</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
-  <exec_depend>rviz2</exec_depend>
+  <exec_depend>rviz</exec_depend>
   <exec_depend>ros_tcp_endpoint</exec_depend>
-  <exec_depend>rclpy</exec_depend>
-  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>rospy</exec_depend>
+  <exec_depend>rospkg</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
-  <exec_depend>vision_msgs</exec_depend>
+  <exec_depend>uc2_vision_msgs</exec_depend>
   <exec_depend>visualization_msgs</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
   <exec_depend>python3-scipy</exec_depend>
-
-  <export>
-    <build_type>ament_python</build_type>
-  </export>
 </package>

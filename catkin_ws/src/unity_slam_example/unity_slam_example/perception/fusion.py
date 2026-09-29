@@ -6,15 +6,13 @@ Lidar tracks outside the camera view, or not matched, stay "obstacle" with lidar
 """
 
 import math
+import threading
 
 import numpy as np
-import rclpy
-from rclpy.duration import Duration
-from rclpy.node import Node
-from rclpy.time import Time
+import rospy
 from sensor_msgs.msg import CameraInfo
 from tf2_ros import Buffer, TransformException, TransformListener
-from vision_msgs.msg import Detection2DArray, Detection3DArray
+from uc2_vision_msgs.msg import Detection2DArray, Detection3DArray
 from visualization_msgs.msg import Marker, MarkerArray
 
 from .fusion_math import associate, box_corners, fused_score, project_interval
@@ -41,22 +39,32 @@ def transform_matrix(tf):
     return R, np.array([t.x, t.y, t.z])
 
 
-class Fusion(Node):
+class Fusion:
     def __init__(self):
-        super().__init__('obstacle_fusion')
-        self.iou_gate = self.declare_parameter('iou_gate', 0.3).value
-        self.label_ttl = self.declare_parameter('label_ttl', 1.0).value
-        self.robot_frame = self.declare_parameter('robot_frame', 'base_link').value
+        self.iou_gate = rospy.get_param('~iou_gate', 0.3)
+        self.label_ttl = rospy.get_param('~label_ttl', 1.0)
+        self.robot_frame = rospy.get_param('~robot_frame', 'base_link')
         self.buffer = Buffer()
-        self.listener = TransformListener(self.buffer, self)
+        self.listener = TransformListener(self.buffer)
         self.info = None
         self.tracks = None
         self.labels = {}        # track id -> (label, fused score, stamp seconds)
-        self.obstacles_pub = self.create_publisher(Detection3DArray, '/obstacles', 10)
-        self.marker_pub = self.create_publisher(MarkerArray, '/obstacles_markers', 10)
-        self.create_subscription(CameraInfo, '/camera/camera_info', self.on_info, 1)
-        self.create_subscription(Detection3DArray, '/obstacles_lidar', self.on_tracks, 10)
-        self.create_subscription(Detection2DArray, '/detections_2d', self.on_detections, 10)
+        # rospy runs each subscription in its own thread; ROS 2's single-threaded executor
+        # serialised these callbacks, so keep that guarantee.
+        self.lock = threading.Lock()
+        self.obstacles_pub = rospy.Publisher('/obstacles', Detection3DArray, queue_size=10)
+        self.marker_pub = rospy.Publisher('/obstacles_markers', MarkerArray, queue_size=10)
+        rospy.Subscriber('/camera/camera_info', CameraInfo, self.locked(self.on_info), queue_size=1)
+        rospy.Subscriber('/obstacles_lidar', Detection3DArray, self.locked(self.on_tracks),
+                         queue_size=10)
+        rospy.Subscriber('/detections_2d', Detection2DArray, self.locked(self.on_detections),
+                         queue_size=10)
+
+    def locked(self, callback):
+        def run(msg):
+            with self.lock:
+                callback(msg)
+        return run
 
     def on_info(self, msg):
         self.info = msg
@@ -66,9 +74,9 @@ class Fusion(Node):
         self.publish(stamp_to_seconds(msg.header.stamp))
 
     def lookup(self, target, source, stamp):
-        for when in (Time.from_msg(stamp), Time()):
+        for when in (stamp, rospy.Time(0)):
             try:
-                return self.buffer.lookup_transform(target, source, when, Duration(seconds=0.02))
+                return self.buffer.lookup_transform(target, source, when, rospy.Duration(0.02))
             except TransformException:
                 continue
         return None
@@ -81,7 +89,7 @@ class Fusion(Node):
         if tf is None:
             return
         R, t = transform_matrix(tf)
-        fx, cx = self.info.k[0], self.info.k[2]
+        fx, cx = self.info.K[0], self.info.K[2]
         intervals = {}
         for det in self.tracks.detections:
             b = det.bbox
@@ -145,14 +153,7 @@ class Fusion(Node):
         self.marker_pub.publish(markers)
 
 
-def main(args=None):
-    rclpy.init(args=args)
-    node = Fusion()
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+def main():
+    rospy.init_node('obstacle_fusion')
+    Fusion()
+    rospy.spin()
