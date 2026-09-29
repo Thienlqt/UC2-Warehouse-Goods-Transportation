@@ -12,14 +12,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-import rclpy
 import struct
+import socket
+import rospy
+from io import BytesIO
 
 import threading
 import json
-
-from rclpy.serialization import deserialize_message
-from rclpy.serialization import serialize_message
 
 from .exceptions import TopicOrServiceNameDoesNotExistError
 
@@ -72,7 +71,8 @@ class ClientThread(threading.Thread):
         num = struct.unpack("<I", raw_bytes)[0]
         return num
 
-    def read_string(self):
+    @staticmethod
+    def read_string(conn):
         """
         Reads int32 from socket connection to determine how many bytes to
         read to get the string that follows. Read that number of bytes and
@@ -81,30 +81,30 @@ class ClientThread(threading.Thread):
         Returns: string
 
         """
-        str_len = ClientThread.read_int32(self.conn)
+        str_len = ClientThread.read_int32(conn)
 
-        str_bytes = ClientThread.recvall(self.conn, str_len)
+        str_bytes = ClientThread.recvall(conn, str_len)
         decoded_str = str_bytes.decode("utf-8")
 
         return decoded_str
 
-    def read_message(self, conn):
+    @staticmethod
+    def read_message(conn):
         """
         Decode destination and full message size from socket connection.
         Grab bytes in chunks until full message has been read.
         """
         data = b""
 
-        destination = self.read_string()
+        destination = ClientThread.read_string(conn)
         full_message_size = ClientThread.read_int32(conn)
 
         data = ClientThread.recvall(conn, full_message_size)
 
         if full_message_size > 0 and not data:
-            self.logerr("No data for a message size of {}, breaking!".format(full_message_size))
+            rospy.logerr("No data for a message size of {}, breaking!".format(full_message_size))
             return
 
-        destination = destination.rstrip("\x00")
         return destination, data
 
     @staticmethod
@@ -123,10 +123,18 @@ class ClientThread(threading.Thread):
         length = len(dest_bytes)
         dest_info = struct.pack("<I%ss" % length, length, dest_bytes)
 
-        serial_response = serialize_message(message)
+        serial_response = BytesIO()
+        message.serialize(serial_response)
 
-        msg_length = struct.pack("<I", len(serial_response))
-        serialized_message = dest_info + msg_length + serial_response
+        # Per documention, https://docs.python.org/3.8/library/io.html#io.IOBase.seek,
+        # seek to end of stream for length
+        # SEEK_SET or 0 - start of the stream (the default); offset should be zero or positive
+        # SEEK_CUR or 1 - current stream position; offset may be negative
+        # SEEK_END or 2 - end of the stream; offset is usually negative
+        response_len = serial_response.seek(0, 2)
+
+        msg_length = struct.pack("<I", response_len)
+        serialized_message = dest_info + msg_length + serial_response.getvalue()
 
         return serialized_message
 
@@ -143,16 +151,16 @@ class ClientThread(threading.Thread):
         return cmd_info + json_info
 
     def send_ros_service_request(self, srv_id, destination, data):
-        if destination not in self.tcp_server.ros_services_table.keys():
+        if destination not in self.tcp_server.ros_services.keys():
             error_msg = "Service destination '{}' is not registered! Known services are: {} ".format(
-                destination, self.tcp_server.ros_services_table.keys()
+                destination, self.tcp_server.ros_services.keys()
             )
             self.tcp_server.send_unity_error(error_msg)
-            self.logerr(error_msg)
+            rospy.logerr(error_msg)
             # TODO: send a response to Unity anyway?
             return
         else:
-            ros_communicator = self.tcp_server.ros_services_table[destination]
+            ros_communicator = self.tcp_server.ros_services[destination]
             service_thread = threading.Thread(
                 target=self.service_call_thread, args=(srv_id, destination, data, ros_communicator)
             )
@@ -165,17 +173,11 @@ class ClientThread(threading.Thread):
         if not response:
             error_msg = "No response data from service '{}'!".format(destination)
             self.tcp_server.send_unity_error(error_msg)
-            self.logerr(error_msg)
+            rospy.logerr(error_msg)
             # TODO: send a response to Unity anyway?
             return
 
         self.tcp_server.unity_tcp_sender.send_ros_service_response(srv_id, destination, response)
-
-    def loginfo(self, text):
-        self.tcp_server.get_logger().info(text)
-
-    def logerr(self, text):
-        self.tcp_server.get_logger().error(text)
 
     def run(self):
         """
@@ -192,7 +194,7 @@ class ClientThread(threading.Thread):
             msg: the ROS msg type as bytes
 
         """
-        self.loginfo("Connection from {}".format(self.incoming_ip))
+        rospy.loginfo("Connection from {}".format(self.incoming_ip))
         halt_event = threading.Event()
         self.tcp_server.unity_tcp_sender.start_sender(self.conn, halt_event)
         try:
@@ -217,18 +219,18 @@ class ClientThread(threading.Thread):
                 elif destination.startswith("__"):
                     # handle a system command, such as registering new topics
                     self.tcp_server.handle_syscommand(destination, data)
-                elif destination in self.tcp_server.publishers_table:
-                    ros_communicator = self.tcp_server.publishers_table[destination]
+                elif destination in self.tcp_server.publishers:
+                    ros_communicator = self.tcp_server.publishers[destination]
                     ros_communicator.send(data)
                 else:
                     error_msg = "Not registered to publish topic '{}'! Valid publish topics are: {} ".format(
-                        destination, self.tcp_server.publishers_table.keys()
+                        destination, self.tcp_server.publishers.keys()
                     )
                     self.tcp_server.send_unity_error(error_msg)
-                    self.logerr(error_msg)
+                    rospy.logerr(error_msg)
         except IOError as e:
-            self.logerr("Exception: {}".format(e))
+            rospy.logerr("Exception: {}".format(e))
         finally:
             halt_event.set()
             self.conn.close()
-            self.loginfo("Disconnected from {}".format(self.incoming_ip))
+            rospy.loginfo("Disconnected from {}".format(self.incoming_ip))

@@ -12,9 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-import rclpy
+import rospy
 import socket
-import re
 
 from .communication import RosReceiver
 from .client import ClientThread
@@ -24,6 +23,7 @@ class UnityService(RosReceiver):
     """
     Class to register a ROS service that's implemented in Unity.
     """
+
     def __init__(self, topic, service_class, tcp_server, queue_size=10):
         """
 
@@ -32,19 +32,16 @@ class UnityService(RosReceiver):
             service_class: The message class in catkin workspace
             queue_size:    Max number of entries to maintain in an outgoing queue
         """
-        strippedTopic = re.sub('[^A-Za-z0-9_]+', '', topic)
-        node_name = f'{strippedTopic}_service'
-        RosReceiver.__init__(self, node_name)
-
         self.topic = topic
-        self.node_name = node_name
+        self.node_name = "{}_service".format(topic)
         self.service_class = service_class
         self.tcp_server = tcp_server
         self.queue_size = queue_size
 
-        self.service = self.create_service(self.service_class, self.topic, self.send)
+        # Start Subscriber listener function
+        self.service = rospy.Service(self.topic, self.service_class, self.send)
 
-    def send(self, request, response):
+    def send(self, data):
         """
         Connect to TCP endpoint on client, pass along message and get reply
         Args:
@@ -53,8 +50,7 @@ class UnityService(RosReceiver):
         Returns:
             The response message
         """
-        response = self.tcp_server.send_unity_service(self.topic, self.service_class, request)
-        return response
+        return self.tcp_server.send_unity_service(self.topic, self.service_class, data)
 
     def unregister(self):
         """
@@ -62,4 +58,4 @@ class UnityService(RosReceiver):
         Returns:
 
         """
-        self.destroy_node()
+        self.service.shutdown()

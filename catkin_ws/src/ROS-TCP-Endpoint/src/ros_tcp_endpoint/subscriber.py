@@ -12,14 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-import rclpy
+import rospy
 import socket
-import re
-
-from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSReliabilityPolicy
-from rclpy.qos import QoSProfile
 
 from .communication import RosReceiver
+from .client import ClientThread
 
 
 class RosSubscriber(RosReceiver):
@@ -35,24 +32,15 @@ class RosSubscriber(RosReceiver):
             message_class: The message class in catkin workspace
             queue_size:    Max number of entries to maintain in an outgoing queue
         """
-        strippedTopic = re.sub('[^A-Za-z0-9_]+', '', topic)
-        self.node_name = f'{strippedTopic}_RosSubscriber'
-        RosReceiver.__init__(self, self.node_name)
+        RosReceiver.__init__(self)
         self.topic = topic
+        self.node_name = "{}_subscriber".format(topic)
         self.msg = message_class
         self.tcp_server = tcp_server
         self.queue_size = queue_size
 
-        qos_profile = QoSProfile(depth=queue_size)
-
         # Start Subscriber listener function
-        self.subscription = self.create_subscription(
-            self.msg,
-            self.topic,
-            self.send,
-            qos_profile #queue_size
-        )
-        self.subscription
+        self.sub = rospy.Subscriber(self.topic, self.msg, self.send)
 
     def send(self, data):
         """
@@ -64,6 +52,7 @@ class RosSubscriber(RosReceiver):
             self.msg: The deserialize message
 
         """
+
         self.tcp_server.send_unity_message(self.topic, data)
         return self.msg
 
@@ -73,5 +62,5 @@ class RosSubscriber(RosReceiver):
         Returns:
 
         """
-        self.destroy_subscription(self.subscription)
-        self.destroy_node()
+        if not self.sub is None:
+            self.sub.unregister()
