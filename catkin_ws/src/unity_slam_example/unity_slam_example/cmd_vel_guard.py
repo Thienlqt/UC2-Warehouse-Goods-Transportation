@@ -1,6 +1,6 @@
 """Last-resort stop between move_base and the robot: /cmd_vel_nav + /scan -> /cmd_vel.
 
-ROS 1 stand-in for Nav2's collision_monitor (see guard_math). Publishes zero velocity while
+Slows or stops commands that would hit the scan (see guard_math). Publishes zero velocity while
 the scan is older than source_timeout, so a stalled lidar never leaves the robot driving blind.
 """
 

@@ -49,8 +49,8 @@ class Fusion:
         self.info = None
         self.tracks = None
         self.labels = {}        # track id -> (label, fused score, stamp seconds)
-        # rospy runs each subscription in its own thread; ROS 2's single-threaded executor
-        # serialised these callbacks, so keep that guarantee.
+        # rospy runs each subscription in its own thread; the callbacks share the tracks and
+        # labels, so serialise them.
         self.lock = threading.Lock()
         self.obstacles_pub = rospy.Publisher('/obstacles', Detection3DArray, queue_size=10)
         self.marker_pub = rospy.Publisher('/obstacles_markers', MarkerArray, queue_size=10)

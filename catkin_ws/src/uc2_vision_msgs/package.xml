@@ -3,7 +3,7 @@
   <name>uc2_vision_msgs</name>
   <version>0.0.1</version>
   <description>
-    ROS 2 vision_msgs 4.x detection messages (string class ids, detection ids, Pose2D with
+    vision_msgs 4.x detection messages (string class ids, detection ids, Pose2D with
     Point2D) rebuilt for ROS 1 Noetic, whose vision_msgs has an older, incompatible layout.
   </description>
   <maintainer email="unity-robotics@unity3d.com">Unity Robotics</maintainer>

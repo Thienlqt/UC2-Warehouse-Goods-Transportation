@@ -35,7 +35,7 @@ bash scripts/run_ros.sh           # Ubuntu / WSL: native, RViz opens as a window
 `launch/unity_slam_example.launch` starts slam_toolbox, move_base (NavfnROS global planner,
 DWAPlannerROS local planner) and `cmd_vel_guard`. The costmaps wait for TF indefinitely, so ROS
 can start before you press Play. Commands flow move_base → `/cmd_vel_nav` → `cmd_vel_guard` →
-`/cmd_vel` (Unity). The guard is a last-resort stop that replaces Nav2's collision monitor: it
+`/cmd_vel` (Unity). The guard is a last-resort stop: it
 rolls the command forward and slows it if the robot's circle (0.22 m) would touch at least 6
 scan points within 1.2 s, down to zero at contact within 0.1 s. It also sends zero velocity
 while `/scan` is older than 1 s. Its parameters are in the launch file.
@@ -58,9 +58,8 @@ workspace on every start, so rerun it to pick up ROS configuration/code changes.
 ## Settings you own
 
 Edit `catkin_ws/src/unity_slam_example/config/move_base.yaml`. This configuration targets the
-installed **ROS 1 Noetic** navigation stack. The starting values were carried over from the
-Nav2 (DWB) configuration on the ROS 2 `main` branch; DWA scores trajectories differently, so
-re-tune them with the tests below and record the values you settle on.
+installed **ROS 1 Noetic** navigation stack. The values below are starting points, not tuned
+results: re-tune them with the tests below and record the values you settle on.
 
 | Setting | Initial value | Purpose |
 |---|---:|---|

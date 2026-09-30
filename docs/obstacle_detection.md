@@ -14,9 +14,9 @@ Unity lidar  --/scan 10 Hz--> lidar_obstacles (segments -> L-shape boxes -> Kalm
                                          \--> /obstacles_markers (RViz boxes + labels)
 ```
 
-The detection topics use `uc2_vision_msgs` (`catkin_ws/src/uc2_vision_msgs`): the ROS 2
+The detection topics use `uc2_vision_msgs` (`catkin_ws/src/uc2_vision_msgs`): the
 `vision_msgs` 4.x layout with string class ids and track ids, which Noetic's own `vision_msgs`
-lacks. Fields match the ROS 2 `main` branch; only the package name differs.
+lacks.
 
 | Stage | Algorithm | Why |
 |---|---|---|

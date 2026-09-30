@@ -1,5 +1,5 @@
-# slam_toolbox (online async) for the Unity robot: Noetic's packaged mapper_params_online_async.yaml
-# (main used Jazzy's packaged defaults the same way). Frames match Unity's TF:
+# slam_toolbox (online async) for the Unity robot: Noetic's packaged mapper_params_online_async.yaml.
+# Frames match Unity's TF:
 # map -> odom -> base_footprint.
 # /use_sim_time is set by the launch file.
 

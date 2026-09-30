@@ -1,6 +1,6 @@
 """Pure maths for the cmd_vel safety guard (no ROS imports, unit tested).
 
-Stands in for Nav2's collision_monitor "approach" action on a circular footprint: roll the
+Circular footprint, collision-monitor "approach" style: roll the
 commanded twist forward and slow it so that contact stays at least `horizon` seconds away.
 """
 

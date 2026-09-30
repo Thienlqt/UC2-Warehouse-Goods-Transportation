@@ -6,7 +6,6 @@ ROS 1 Noetic. Noetic's own `vision_msgs` differs: `ObjectHypothesisWithPose.id` 
 instead of a string `class_id`, `Detection2D` / `Detection3D` have no `id` for track ids, and
 `BoundingBox2D.center` is a flat `x, y, theta`.
 
-Keeping the ROS 2 layout means the perception nodes and Unity's generated C# classes
-(`UnityProject/Assets/Scripts/RosMessages/Vision`) are field-for-field the same as on the ROS 2
-`main` branch; only the package name differs. The `.msg` files are copied unchanged apart from
-package-relative references. Apache-2.0, see `LICENSE`.
+Unity's generated C# classes (`UnityProject/Assets/Scripts/RosMessages/Vision`) match these
+definitions field for field. The `.msg` files are copied unchanged from vision_msgs 4.2 apart
+from package-relative references. Apache-2.0, see `LICENSE`.

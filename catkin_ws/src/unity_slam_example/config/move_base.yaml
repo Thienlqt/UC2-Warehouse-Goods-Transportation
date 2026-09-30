@@ -1,7 +1,6 @@
 # ROS 1 Noetic move_base / TurtleBot3 Waffle in the Unity simulation. Loaded into the move_base
 # node's namespace; /use_sim_time is set by the launch file.
-# Values carried over from the ROS 2 Nav2 config on main (nav2_obstacle_avoidance.yaml):
-# NavfnROS for Nav2's NavfnPlanner, DWAPlannerROS for DWB. Tune robot_radius (0.22 m estimate)
+# Global planner NavfnROS, local planner DWAPlannerROS. Tune robot_radius (0.22 m estimate)
 # against the actual robot before changing platforms; test/check_obstacle_costmap.py uses it.
 # 0.5 s expected_update_rate is a maximum scan interval in simulation time, not Hz.
 # The collision-monitor stop lives in cmd_vel_guard (launch file), not here.
@@ -9,10 +8,10 @@
 base_global_planner: navfn/NavfnROS
 base_local_planner: dwa_local_planner/DWAPlannerROS
 controller_frequency: 10.0
-planner_frequency: 1.0          # Nav2's default behaviour tree replans at 1 Hz
+planner_frequency: 1.0          # replan the global path at 1 Hz
 planner_patience: 5.0
 controller_patience: 15.0
-oscillation_timeout: 20.0       # Nav2 progress checker: 0.1 m within 20 s
+oscillation_timeout: 20.0       # recover if the robot moves < 0.1 m in 20 s
 oscillation_distance: 0.1
 max_planning_retries: -1
 recovery_behavior_enabled: true
@@ -22,7 +21,7 @@ shutdown_costmaps: false
 NavfnROS:
   allow_unknown: true
   default_tolerance: 0.5
-  use_dijkstra: true            # use_astar: false in Nav2
+  use_dijkstra: true            # Dijkstra rather than A*
   visualize_potential: false
 
 # Limits match the Unity AGVController clamp (0.2 m/s, 0.5 rad/s).
@@ -34,7 +33,7 @@ DWAPlannerROS:
   max_vel_y: 0.0
   min_vel_y: 0.0
   max_vel_theta: 0.5
-  min_vel_theta: 0.2            # Nav2 behavior_server min_rotational_vel; DWA stalls turning at 0
+  min_vel_theta: 0.2            # DWA stalls turning in place at 0
   acc_lim_x: 0.5
   acc_lim_y: 0.0
   acc_lim_trans: 0.5
@@ -45,7 +44,7 @@ DWAPlannerROS:
 
   xy_goal_tolerance: 0.25
   yaw_goal_tolerance: 0.25
-  latch_xy_goal_tolerance: true # Nav2 stateful goal checker
+  latch_xy_goal_tolerance: true # once in position, only rotate to the goal heading
 
   sim_time: 2.0
   sim_granularity: 0.05

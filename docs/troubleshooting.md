@@ -23,8 +23,8 @@
 ## Unity does not connect (red arrows in the Game view)
 
 - The ROS side must be running first and log `Starting server on 0.0.0.0:10000`.
-- **Robotics → ROS Settings**: ROS1, `127.0.0.1`, port 10000. If it shows ROS2, you are on a
-  checkout of `main` (ROS 2) or the project settings were not reloaded: reopen the project.
+- **Robotics → ROS Settings**: ROS1, `127.0.0.1`, port 10000. If it shows ROS2, the project
+  settings were not reloaded after a pull: reopen the project.
 - macOS: port 10000 must be free (`lsof -i :10000`) and the container running (`docker ps`).
 - WSL: see "If something is wrong" in [setup_windows_wsl.md](setup_windows_wsl.md) (WSL IP or
   mirrored networking, firewall).
