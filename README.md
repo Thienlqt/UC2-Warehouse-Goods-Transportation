@@ -38,7 +38,7 @@ pressing Play again ([why](docs/troubleshooting.md#the-robot-ignores-goals)).
 | Path | What |
 |---|---|
 | `UnityProject/` | Unity project: warehouse scene, robot, lidar and camera sensors, detection overlay, first-person driving (**P**), dataset capture tool |
-| `catkin_ws/src/unity_slam_example/` | ROS 1 package: launch file, move_base / SLAM / perception config, RViz config, `cmd_vel_guard`, perception nodes, tests, detector model (`models/`) |
+| `catkin_ws/src/unity_slam_example/` | ROS 1 package: launch file, move_base / SLAM / perception config, RViz config, `cmd_vel_guard`, perception nodes, tests, detector model (`models/`, AGPL-3.0) |
 | `catkin_ws/src/uc2_vision_msgs/` | Detection messages: the `vision_msgs` 4.x layout (string class ids), which Noetic's `vision_msgs` lacks (Apache-2.0) |
 | `catkin_ws/src/ROS-TCP-Endpoint/` | Unity's ROS-TCP-Endpoint v0.6.0, ROS 1 release (vendored, Apache-2.0; `python3` shebang) |
 | `scripts/` | Ubuntu / WSL: `setup_ubuntu.sh` (dependencies, once), `run_ros.sh` (build + launch) |
@@ -61,8 +61,18 @@ pressing Play again ([why](docs/troubleshooting.md#the-robot-ignores-goals)).
 
 Derived from Unity Technologies'
 [Robotics-Nav2-SLAM-Example](https://github.com/Unity-Technologies/Robotics-Nav2-SLAM-Example)
-(Apache-2.0) and includes [ROS-TCP-Endpoint](https://github.com/Unity-Technologies/ROS-TCP-Endpoint).
-This repository modifies it: ROS 1 Noetic / Ubuntu 20.04 port, Unity 2021.3 upgrade, obstacle avoidance tuning, camera + lidar perception, detector
-training, and cross-platform setup. See
-[LICENSE.md](LICENSE.md) and [Third Party Notices.md](Third%20Party%20Notices.md). The original
-tutorials (Unity visualizations, custom visualizers) remain in the upstream repository.
+(Apache-2.0, Copyright 2021 Unity Technologies) and includes
+[ROS-TCP-Endpoint](https://github.com/Unity-Technologies/ROS-TCP-Endpoint) (Apache-2.0).
+Licensed under Apache-2.0 ([LICENSE.md](LICENSE.md)); components under other terms, including
+the detector model, are listed in [Third Party Notices.md](Third%20Party%20Notices.md).
+
+Changes from the upstream project: ROS 1 Noetic / Ubuntu 20.04 port (catkin workspace, move_base,
+`cmd_vel_guard`), Unity 2021.3 upgrade, obstacle avoidance tuning, camera + lidar perception,
+detector training, and cross-platform setup. The upstream Unity scripts were modified in place;
+the original tutorials (Unity visualizations, custom visualizers) remain in the upstream
+repository.
+
+To cite the upstream project in a report:
+
+> Unity Technologies. *Robotics-Nav2-SLAM-Example* [Computer software], 2021. Apache-2.0.
+> https://github.com/Unity-Technologies/Robotics-Nav2-SLAM-Example

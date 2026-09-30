@@ -6,8 +6,9 @@
     vision_msgs 4.x detection messages (string class ids, detection ids, Pose2D with
     Point2D) rebuilt for ROS 1 Noetic, whose vision_msgs has an older, incompatible layout.
   </description>
-  <maintainer email="unity-robotics@unity3d.com">Unity Robotics</maintainer>
+  <maintainer email="lamquangthien.lqt@gmail.com">Thienlqt</maintainer>
   <license>Apache 2.0</license>
+  <author>vision_msgs contributors (message definitions)</author>
 
   <buildtool_depend>catkin</buildtool_depend>
   <build_depend>message_generation</build_depend>

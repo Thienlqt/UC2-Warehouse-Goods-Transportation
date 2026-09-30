@@ -4,8 +4,9 @@
   <name>unity_slam_example</name>
   <version>0.0.1</version>
   <description>Unity Robotics SLAM + navigation example (ROS 1 Noetic)</description>
-  <maintainer email="unity-robotics@unity3d.com">Unity Robotics</maintainer>
+  <maintainer email="lamquangthien.lqt@gmail.com">Thienlqt</maintainer>
   <license>Apache 2.0</license>
+  <author>Unity Robotics (original ROS 2 package in Robotics-Nav2-SLAM-Example)</author>
 
   <buildtool_depend>catkin</buildtool_depend>
   <test_depend>python3-pytest</test_depend>

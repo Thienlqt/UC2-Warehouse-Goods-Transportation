@@ -40,7 +40,10 @@ Confidence scores:
 
 The trained model is committed in `catkin_ws/src/unity_slam_example/models/` (`detector.onnx`
 and `classes.txt`, about 12 MB) and installed with the package, so a fresh clone detects out of
-the box on every OS. Retrain only when the scene or the classes change, as below.
+the box on every OS. Retrain only when the scene or the classes change, as below. The model is
+YOLOv8n fine-tuned with Ultralytics, so it is licensed under AGPL-3.0
+([models/README.md](../catkin_ws/src/unity_slam_example/models/README.md)); the rest of the
+repository is Apache-2.0.
 
 The committed model is the best epoch (15) of a 60-epoch run that stopped at epoch 16. On the
 900 validation frames it scores precision 0.91, recall 0.77, mAP50 0.84, mAP50-95 0.64.
@@ -142,3 +145,14 @@ cd catkin_ws/src/unity_slam_example && python3 -m pytest -q test/
 - The warehouse model has no `person` class yet; pedestrians and a retrain are the next milestone.
 - It is trained only on this warehouse's rendered assets. Validation frames come from new layouts of
   the same assets, so the scores measure this simulation, not real cameras or other warehouses.
+
+## References
+
+- Borges, G. A., & Aldon, M.-J. (2004). Line extraction in 2D range images for mobile robotics.
+  *Journal of Intelligent and Robotic Systems*, 40(3), 267–297. (Adaptive breakpoint detection.)
+- Zhang, X., Xu, W., Dong, C., & Dolan, J. M. (2017). Efficient L-shape fitting for vehicle
+  detection using laser scanners. *IEEE Intelligent Vehicles Symposium (IV)*, 54–59.
+- Jocher, G., Chaurasia, A., & Qiu, J. (2023). *Ultralytics YOLOv8* (Version 8.0.0) [Computer
+  software]. AGPL-3.0. https://github.com/ultralytics/ultralytics
+- Lin, T.-Y., et al. (2014). Microsoft COCO: Common objects in context. *ECCV 2014*. (Pretraining
+  data of the YOLOv8n weights the detector is fine-tuned from.)
