@@ -23,7 +23,6 @@ sudo apt-get install -y --no-install-recommends \
     ros-noetic-navfn \
     ros-noetic-dwa-local-planner \
     ros-noetic-slam-toolbox \
-    ros-noetic-cv-bridge \
     ros-noetic-tf2-ros \
     ros-noetic-rviz \
     python3-opencv \
@@ -39,7 +38,7 @@ pip3 install --user --upgrade "onnxruntime<1.20" "numpy>=1.21.6,<1.24"
 set +u  # ROS setup scripts read unset variables
 source /opt/ros/noetic/setup.bash
 set -u
-python3 -c 'import numpy, scipy.optimize, cv_bridge, onnxruntime
+python3 -c 'import numpy, scipy.optimize, cv2, onnxruntime
 assert numpy.__version__.startswith("1."), "NumPy %s found; need 1.x" % numpy.__version__
 print("Dependencies OK: numpy", numpy.__version__, "| onnxruntime", onnxruntime.__version__)'
 echo "Next: bash scripts/run_ros.sh"

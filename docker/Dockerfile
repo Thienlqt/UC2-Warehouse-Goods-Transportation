@@ -14,7 +14,6 @@ RUN apt-get update -q && \
         ros-noetic-navfn \
         ros-noetic-dwa-local-planner \
         ros-noetic-slam-toolbox \
-        ros-noetic-cv-bridge \
         ros-noetic-tf2-ros \
         ros-noetic-rviz \
         python3-opencv \
@@ -27,11 +26,13 @@ RUN apt-get update -q && \
 # still uses (np.bool in linear_sum_assignment).
 RUN pip3 install --no-cache-dir --upgrade "onnxruntime<1.20" "numpy>=1.21.6,<1.24" && \
     bash -c "source /opt/ros/noetic/setup.bash && python3 -c \
-        'import numpy, scipy.optimize, cv_bridge, onnxruntime; assert numpy.__version__.startswith(\"1.\")'"
+        'import numpy, scipy.optimize, cv2, onnxruntime; assert numpy.__version__.startswith(\"1.\")'"
 
-# The base image already has the `ubuntu` user (uid 1000); its entrypoint sets up the desktop.
-RUN echo '[ -f ~/catkin_ws/devel/setup.bash ] && source ~/catkin_ws/devel/setup.bash' \
-        >> /home/ubuntu/.bashrc
+# The base image's entrypoint creates the `ubuntu` user at container start (from /etc/skel)
+# and sets up the desktop, so ROS shells get their setup from the skeleton .bashrc.
+RUN printf '%s\n' 'source /opt/ros/noetic/setup.bash' \
+        '[ -f ~/catkin_ws/devel/setup.bash ] && source ~/catkin_ws/devel/setup.bash' \
+        >> /etc/skel/.bashrc
 
 ENV TURTLEBOT3_MODEL=waffle
 ENV USER=ubuntu

@@ -22,6 +22,13 @@ docker image inspect "$image_name" >/dev/null 2>&1 || {
 docker run -d --rm --name "$container_name" \
     -p 6080:80 -p 10000:10000 --shm-size=1024m \
     "$image_name"
+# The image's entrypoint creates the ubuntu user at start-up; wait for it before using it.
+if ! docker exec "$container_name" bash -c '
+    for i in $(seq 1 30); do id ubuntu >/dev/null 2>&1 && [ -d /home/ubuntu ] && exit 0; sleep 1; done
+    exit 1'; then
+    echo "User ubuntu was not created within 30 s." >&2
+    exit 1
+fi
 # Copy the workspace sources (all packages, including the detector model) and build them.
 docker exec -u ubuntu "$container_name" mkdir -p "$ws/src"
 docker cp "$repo/catkin_ws/src/." "$container_name:$ws/src/"
