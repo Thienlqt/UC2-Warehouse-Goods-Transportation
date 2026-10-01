@@ -1,0 +1,17 @@
+# Loaded after move_base.yaml when perception runs (launch file): adds the predicted_obstacles grid
+# (where moving tracks will be within 2 s, plus class padding) to the local costmap.
+# A StaticLayer replaces its whole grid on every message, so old predictions disappear exactly; an
+# obstacle layer would keep cells that the scan's ray tracing happens to miss. It also blocks
+# move_base start-up until the first grid arrives, which is why it is not in move_base.yaml.
+local_costmap:
+  plugins:
+    - {name: obstacle_layer, type: "costmap_2d::ObstacleLayer"}
+    - {name: predicted_layer, type: "costmap_2d::StaticLayer"}
+    - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
+  predicted_layer:
+    map_topic: /obstacles_predicted
+    subscribe_to_updates: false
+    track_unknown_space: false
+    trinary_costmap: true
+    lethal_cost_threshold: 100
+    use_maximum: true             # add to the scan obstacles, never lower them

@@ -186,6 +186,22 @@ Visualization Manager:
       Topic: /move_base/current_goal
       Unreliable: false
       Value: true
+    - Alpha: 1
+      Axes Length: 1
+      Axes Radius: 0.10000000149011612
+      Class: rviz/Pose
+      Color: 0; 200; 255
+      Enabled: true
+      Head Length: 0.30000001192092896
+      Head Radius: 0.10000000149011612
+      Name: Assist Heading
+      Queue Size: 10
+      Shaft Length: 1.5
+      Shaft Radius: 0.05000000074505806
+      Shape: Arrow
+      Topic: /teleop_assist/heading
+      Unreliable: false
+      Value: true
     - Alpha: 0.699999988079071
       Class: rviz/Map
       Color Scheme: map
@@ -204,6 +220,16 @@ Visualization Manager:
         boxes: true
         labels: true
       Queue Size: 100
+      Value: true
+    - Alpha: 0.5
+      Class: rviz/Map
+      Color Scheme: costmap
+      Draw Behind: false
+      Enabled: true
+      Name: Predicted Obstacles
+      Topic: /obstacles_predicted
+      Unreliable: false
+      Use Timestamp: false
       Value: true
     - Class: rviz/Image
       Enabled: true

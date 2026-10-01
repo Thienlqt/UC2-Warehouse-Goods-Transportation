@@ -21,3 +21,20 @@ obstacle_fusion:
   iou_gate: 0.3               # min horizontal IoU between a projected lidar box and a camera box
   label_ttl: 1.0              # keep a camera label on a track this long without re-detection (s)
   robot_frame: base_link
+
+# Avoidance from the tracks above: /obstacles -> /obstacles_predicted (grid for the local costmap).
+# See docs/obstacle_avoidance.md. min_speed and min_confidence are also cmd_vel_guard parameters
+# in the launch file; keep them equal.
+predicted_obstacles:
+  horizon: 2.0                # seconds of constant-velocity prediction (DWA sim_time)
+  step: 0.2                   # prediction step (s); outlines overlap at walking speeds
+  min_speed: 0.15             # m/s; slower tracks count as static (Kalman velocity noise)
+  min_confidence: 0.3         # fused scores can be lower than lidar-only ones
+  spacing: 0.025              # outline point spacing (m): half a costmap cell, so points on cell
+                              # boundaries cannot skip a cell along an edge
+  keep_out: 0.45              # drop predicted points this close to the robot centre (m)
+  grid_size: 6.0              # grid side (m) around the robot: the local costmap's size
+  resolution: 0.05            # the local costmap's resolution
+  obstacle_timeout: 0.5       # publish an empty grid when /obstacles is older than this (s)
+  padding:                    # extra clearance per class (m), 0 for unlisted classes; a padded
+    person: 0.35              # class is marked even when it stands still

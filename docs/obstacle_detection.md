@@ -1,8 +1,10 @@
 # Obstacle detection: camera + lidar boxes, labels and confidence
 
-move_base still avoids obstacles from the raw `/scan` ([obstacle_avoidance.md](obstacle_avoidance.md)).
+move_base avoids obstacles from the raw `/scan` ([obstacle_avoidance.md](obstacle_avoidance.md)).
 This layer adds **perception**: oriented boxes around obstacles with a **class name** and a
-**confidence score**, from the robot's camera and 2D lidar.
+**confidence score**, from the robot's camera and 2D lidar. Navigation also uses the tracks on
+`/obstacles`: their predicted paths go into the local costmap, and `cmd_vel_guard` brakes for
+moving ones ([Moving and labelled obstacles](obstacle_avoidance.md#moving-and-labelled-obstacles)).
 
 ```text
 Unity camera --JPEG 30 Hz--> camera_detector (YOLOv8n, ONNX Runtime) --> /detections_2d
@@ -12,6 +14,8 @@ Unity lidar  --/scan 10 Hz--> lidar_obstacles (segments -> L-shape boxes -> Kalm
 /detections_2d + /obstacles_lidar + TF + camera_info --> obstacle_fusion
                                          \--> /obstacles (named, scored 3D boxes)
                                          \--> /obstacles_markers (RViz boxes + labels)
+/obstacles --> predicted_obstacles --> /obstacles_predicted (predicted paths, local costmap)
+           \--> cmd_vel_guard (brakes for moving tracks)
 ```
 
 The detection topics use `uc2_vision_msgs` (`catkin_ws/src/uc2_vision_msgs`): the
@@ -108,14 +112,17 @@ The robot prefab carries two more components (on `TurtleBot3ManualConfig`, next 
   `no detections received recently` if messages stop, for example after the ROS stack is stopped.
 - **First Person Drive**: **P** switches to driving. The Game view then renders from the robot
   camera's pose and vertical FOV, with the robot hidden from that view only. **W/S** (or Up/Down)
-  drive and **A/D** (or Left/Right) turn. ROS `/cmd_vel` is ignored until **P** is pressed again.
-  The free camera is paused while driving. The boxes are drawn full screen, and a faint frame marks
+  drive and **A/D** (or Left/Right) turn. Driving is **assisted** by default: the keys go to ROS,
+  which holds your heading and steers around obstacles within 10 m
+  ([assisted driving](obstacle_avoidance.md#assisted-driving-hold-w-and-let-it-steer)). **O**
+  switches to direct driving, which ignores ROS. The free camera is paused while driving. The boxes are drawn full screen, and a faint frame marks
   the 4:3 region the detector sees, because a wider Game view shows more at the sides.
 
 Click the Game view first so it has keyboard focus. Boxes arrive one inference later (~0.1 s on
 CPU), so they trail fast turns slightly.
 
-Turn perception off with `bash scripts/run_ros.sh perception:=false` (Ubuntu / WSL).
+Turn perception off with `bash scripts/run_ros.sh perception:=false` (Ubuntu / WSL). Avoidance
+then falls back to the scan alone.
 Tuning lives in `catkin_ws/src/unity_slam_example/config/perception.yaml`.
 
 ## Checks

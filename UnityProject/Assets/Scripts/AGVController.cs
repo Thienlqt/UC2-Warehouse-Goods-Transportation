@@ -25,6 +25,8 @@ namespace RosSharp.Control
 
         public float ROSTimeout = 0.5f;
         private float lastCmdReceived = 0f;
+        // Seconds since the last cmd_vel from ROS (large if none has arrived).
+        public float SecondsSinceRosCommand => Time.time - lastCmdReceived;
 
         ROSConnection ros;
         private RotationDirection direction;

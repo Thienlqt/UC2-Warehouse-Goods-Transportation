@@ -3,6 +3,7 @@ import math
 import numpy as np
 import pytest
 
+from unity_slam_example.avoidance_math import Track
 from unity_slam_example.guard_math import guard_twist, position_after, safe_time, scan_points
 
 
@@ -67,3 +68,39 @@ def test_min_points_rejects_isolated_returns():
     post = wall(0.41, half_width=0.04)      # 5 points straight ahead
     assert safe_time(post, 0.2, 0.0, 0.22, 1.2, 0.1, 6) is None
     assert safe_time(post, 0.2, 0.0, 0.22, 1.2, 0.1, 5) == pytest.approx(0.9)
+
+
+NO_POINTS = np.zeros((0, 2))
+
+
+def mover(x, y, vx=0.0, vy=0.0, size=0.4):
+    return Track(x, y, 0.0, size, size, vx, vy, 'obstacle', 0.9)
+
+
+def test_box_crossing_the_path_slows_the_robot():
+    # A box crossing from the right at 0.8 m/s meets the robot (0.2 m/s) at 1.0 s; 0.9 s is the
+    # last clear step. The scan alone (box still to the side) would not limit the robot.
+    crossing = mover(0.6, -1.0, vy=0.8)
+    v, w = guard_twist(0.2, 0.0, NO_POINTS, movers=[crossing])
+    assert v == pytest.approx(0.2 * 0.9 / 1.2) and w == 0.0
+
+
+def test_oncoming_box_slows_the_robot_earlier_than_a_static_one():
+    # Closing at 0.2 + 0.5 m/s from 0.8 m (box edge to centre): contact at ~0.83 s.
+    v, _ = guard_twist(0.2, 0.0, NO_POINTS, movers=[mover(1.0, 0.0, vx=-0.5)])
+    assert v == pytest.approx(0.2 * 0.8 / 1.2)
+
+
+def test_boxes_moving_away_or_alongside_do_not_limit():
+    assert guard_twist(0.2, 0.0, NO_POINTS, movers=[mover(0.5, 0.0, vx=0.5)]) == (0.2, 0.0)
+    assert guard_twist(0.2, 0.0, NO_POINTS, movers=[mover(0.0, 0.6, vx=0.2)]) == (0.2, 0.0)
+
+
+def test_box_already_touching_is_ignored():
+    assert guard_twist(0.2, 0.0, NO_POINTS, movers=[mover(0.3, 0.0, vx=-0.5)]) == (0.2, 0.0)
+
+
+def test_box_that_would_hit_a_stopped_robot_does_not_freeze_it():
+    # Stopping cannot avoid it, so turning (or driving clear) stays allowed.
+    incoming = mover(0.0, -0.8, vy=0.8)
+    assert guard_twist(0.0, 0.5, NO_POINTS, movers=[incoming]) == (0.0, 0.5)

@@ -1,16 +1,20 @@
 """Last-resort stop between move_base and the robot: /cmd_vel_nav + /scan -> /cmd_vel.
 
-Slows or stops commands that would hit the scan (see guard_math). Publishes zero velocity while
-the scan is older than source_timeout, so a stalled lidar never leaves the robot driving blind.
+Slows or stops commands that would hit the scan, or a tracked obstacle from /obstacles moving into
+the robot's path (see guard_math). Publishes zero velocity while the scan is older than
+source_timeout, so a stalled lidar never leaves the robot driving blind. Without fresh /obstacles
+(perception off) it guards against the scan alone.
 """
 
 import rospy
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan
 from tf2_ros import Buffer, TransformException, TransformListener
+from uc2_vision_msgs.msg import Detection3DArray
 
 from .guard_math import guard_twist, scan_points
 from .perception.ros_utils import quaternion_to_yaw
+from .predicted_obstacles import MovingTracks
 
 
 class CmdVelGuard:
@@ -23,12 +27,17 @@ class CmdVelGuard:
         self.source_timeout = rospy.get_param('~source_timeout', 1.0)
         self.buffer = Buffer()
         self.listener = TransformListener(self.buffer)
+        self.movers = MovingTracks(self.buffer, self.base_frame,
+                                   rospy.get_param('~min_speed', 0.15),
+                                   rospy.get_param('~min_confidence', 0.3),
+                                   rospy.get_param('~obstacle_timeout', 0.5))
         self.mount = None       # laser pose (x, y, yaw) in base_frame; the lidar is fixed
         self.scan = None        # (stamp, points in base_frame)
         self.warned = False
         self.publisher = rospy.Publisher('cmd_vel', Twist, queue_size=10)
         rospy.Subscriber('scan', LaserScan, self.on_scan, queue_size=1)
         rospy.Subscriber('cmd_vel_nav', Twist, self.on_cmd, queue_size=10)
+        rospy.Subscriber('obstacles', Detection3DArray, self.movers.on_obstacles, queue_size=1)
 
     def on_scan(self, scan):
         if self.mount is None:
@@ -54,7 +63,7 @@ class CmdVelGuard:
             self.warned = False
             out.linear.x, out.angular.z = guard_twist(
                 cmd.linear.x, cmd.angular.z, scan[1], self.radius, self.horizon, self.step,
-                self.min_points)
+                self.min_points, self.movers.in_base_frame())
         self.publisher.publish(out)
 
 

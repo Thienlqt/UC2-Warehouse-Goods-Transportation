@@ -2,11 +2,14 @@
 
 Circular footprint, collision-monitor "approach" style: roll the
 commanded twist forward and slow it so that contact stays at least `horizon` seconds away.
+Tracked moving obstacles (avoidance_math.Track, base frame) are rolled forward alongside it.
 """
 
 import math
 
 import numpy as np
+
+from .avoidance_math import advance, rect_distance
 
 
 def scan_points(ranges, angle_min, angle_increment, range_min, range_max, x=0.0, y=0.0, yaw=0.0):
@@ -25,27 +28,43 @@ def position_after(v, w, t):
     return v / w * math.sin(w * t), v / w * (1.0 - math.cos(w * t))
 
 
-def safe_time(points, v, w, radius, horizon, step, min_points):
+def safe_time(points, v, w, radius, horizon, step, min_points, movers=()):
     """Seconds the twist can run before `min_points` points enter the footprint, or None.
 
     The result is the last collision-free simulated time, so contact on the very first step
     gives 0 (stop). Points already inside the footprint are ignored: they cannot be avoided
     by slowing down, and counting them would also block turning or backing away.
+
+    `movers` are tracked boxes moving at constant velocity. One box entering the footprint is a
+    contact, but only when the robot's own motion causes it: once a box would reach a
+    stationary robot too, stopping cannot avoid it, so it is ignored from then on. Boxes
+    already touching the footprint are ignored, as are points.
     """
     pts = np.asarray(points, dtype=float).reshape(-1, 2)
     pts = pts[np.hypot(pts[:, 0], pts[:, 1]) > radius]
     if len(pts) < min_points:
+        pts = pts[:0]
+    movers = [m for m in movers if rect_distance(0.0, 0.0, m) > radius]
+    if not len(pts) and not movers:
         return None
     for k in range(1, int(round(horizon / step)) + 1):
-        x, y = position_after(v, w, k * step)
-        if np.count_nonzero(np.hypot(pts[:, 0] - x, pts[:, 1] - y) <= radius) >= min_points:
+        t = k * step
+        x, y = position_after(v, w, t)
+        if len(pts) and np.count_nonzero(
+                np.hypot(pts[:, 0] - x, pts[:, 1] - y) <= radius) >= min_points:
             return (k - 1) * step
+        for m in list(movers):
+            ahead = advance(m, t)
+            if rect_distance(0.0, 0.0, ahead) <= radius:
+                movers.remove(m)            # reaches the robot even if it stops: ignore it
+            elif rect_distance(x, y, ahead) <= radius:
+                return (k - 1) * step
     return None
 
 
-def guard_twist(v, w, points, radius=0.22, horizon=1.2, step=0.1, min_points=6):
+def guard_twist(v, w, points, radius=0.22, horizon=1.2, step=0.1, min_points=6, movers=()):
     """Return (v, w) scaled by safe time / horizon, or unchanged if no contact is predicted."""
-    t = safe_time(points, v, w, radius, horizon, step, min_points)
+    t = safe_time(points, v, w, radius, horizon, step, min_points, movers)
     if t is None:
         return v, w
     scale = t / horizon

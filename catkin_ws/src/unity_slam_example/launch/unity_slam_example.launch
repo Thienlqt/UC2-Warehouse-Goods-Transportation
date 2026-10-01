@@ -1,5 +1,6 @@
 <launch>
-  <!-- ROS 1 Noetic: Unity TCP endpoint, slam_toolbox, move_base + cmd_vel_guard, perception, RViz.
+  <!-- ROS 1 Noetic: Unity TCP endpoint, slam_toolbox, move_base + cmd_vel_guard, perception
+       (+ predicted obstacles for avoidance), RViz.
        Unity publishes /clock, /tf (odom -> base_footprint -> ...), /scan and the camera. -->
   <arg name="params_file" default="$(find unity_slam_example)/config/move_base.yaml"
        doc="move_base parameters for the Unity robot"/>
@@ -24,6 +25,9 @@
   <!-- move_base -> /cmd_vel_nav -> cmd_vel_guard -> /cmd_vel (Unity AGVController). -->
   <node pkg="move_base" type="move_base" name="move_base" output="screen">
     <rosparam command="load" file="$(arg params_file)"/>
+    <!-- Predicted paths of tracked obstacles (predicted_obstacles, below) in the local costmap. -->
+    <rosparam command="load" file="$(find unity_slam_example)/config/move_base_predicted.yaml"
+              if="$(arg perception)"/>
     <remap from="cmd_vel" to="cmd_vel_nav"/>
   </node>
   <node pkg="unity_slam_example" type="cmd_vel_guard" name="cmd_vel_guard" output="screen">
@@ -32,6 +36,21 @@
     <param name="simulation_time_step" value="0.1"/>
     <param name="min_points" value="6"/>
     <param name="source_timeout" value="1.0"/>
+    <!-- Moving tracks from /obstacles (perception); keep equal to predicted_obstacles. -->
+    <param name="min_speed" value="0.15"/>
+    <param name="min_confidence" value="0.3"/>
+    <param name="obstacle_timeout" value="0.5"/>
+  </node>
+  <!-- Assisted keyboard driving (Unity first-person drive, P): /cmd_vel_teleop -> /cmd_vel_nav.
+       Holding W keeps the heading and steers around obstacles within lookahead metres. -->
+  <node pkg="unity_slam_example" type="teleop_assist" name="teleop_assist" output="screen">
+    <param name="robot_radius" value="0.22"/>  <!-- keep equal to the costmaps' robot_radius -->
+    <param name="margin" value="0.2"/>         <!-- extra clearance each side of the body (m) -->
+    <param name="lookahead" value="10.0"/>     <!-- react to obstacles this far ahead (m) -->
+    <param name="max_turn" value="0.5"/>       <!-- rad/s, the Unity controller limit -->
+    <param name="min_speed" value="0.15"/>     <!-- moving tracks: keep equal to the guard -->
+    <param name="min_confidence" value="0.3"/>
+    <param name="obstacle_timeout" value="0.5"/>
   </node>
 
   <node pkg="unity_slam_example" type="tf_odometry" name="unity_tf_odometry" output="screen"
@@ -49,6 +68,9 @@
     <node pkg="unity_slam_example" type="lidar_obstacles" name="lidar_obstacles" output="screen"/>
     <node pkg="unity_slam_example" type="camera_detector" name="camera_detector" output="screen"/>
     <node pkg="unity_slam_example" type="obstacle_fusion" name="obstacle_fusion" output="screen"/>
+    <!-- respawn: the local costmap keeps the last grid it received. -->
+    <node pkg="unity_slam_example" type="predicted_obstacles" name="predicted_obstacles"
+          output="screen" respawn="true"/>
   </group>
 
   <node pkg="rviz" type="rviz" name="rviz" if="$(arg rviz)"

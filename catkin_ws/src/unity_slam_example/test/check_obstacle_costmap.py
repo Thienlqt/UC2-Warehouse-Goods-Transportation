@@ -22,22 +22,36 @@ from geometry_msgs.msg import PoseStamped, TransformStamped, Twist  # noqa: E402
 from nav_msgs.msg import OccupancyGrid, Odometry  # noqa: E402
 from sensor_msgs.msg import LaserScan  # noqa: E402
 from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster  # noqa: E402
+from uc2_vision_msgs.msg import (Detection3D, Detection3DArray,  # noqa: E402
+                                 ObjectHypothesisWithPose)
 
 # Obstacle wall x in metres: the centre of a 5 cm costmap cell, not a cell
 # boundary, so float rounding cannot mark the neighbouring cell instead.
 OBSTACLE_X = 1.025
 ROBOT_RADIUS = 0.22  # Must match robot_radius in config/move_base.yaml.
+# A tracked 0.4 m box at (MOVER_X, -1.0) moving +y at 0.5 m/s: its near edge sweeps along
+# x = MOVER_X - 0.2 (a cell centre) towards the robot's path, where the scan sees nothing.
+MOVER_X = 1.525
+PREDICTED_CELL = (MOVER_X - 0.2, -0.475)
+# Assisted driving: a 0.5 x 1.0 m box (centre x, y, half sizes) 3 m ahead of the robot's start.
+BOX = (3.0, 0.0, 0.25, 0.5)
 
 LAUNCH = """<launch>
   <param name="/use_sim_time" value="false"/>
   <node pkg="move_base" type="move_base" name="move_base">
     <rosparam command="load" file="{config}/move_base.yaml"/>
+    <rosparam command="load" file="{config}/move_base_predicted.yaml"/>
     <remap from="cmd_vel" to="cmd_vel_nav"/>
   </node>
   <node pkg="unity_slam_example" type="cmd_vel_guard" name="cmd_vel_guard">
     <param name="robot_radius" value="{radius}"/>
   </node>
   <node pkg="unity_slam_example" type="tf_odometry" name="unity_tf_odometry"/>
+  <rosparam command="load" file="{config}/perception.yaml"/>
+  <node pkg="unity_slam_example" type="predicted_obstacles" name="predicted_obstacles"/>
+  <node pkg="unity_slam_example" type="teleop_assist" name="teleop_assist">
+    <param name="robot_radius" value="{radius}"/>
+  </node>
 </launch>
 """
 
@@ -51,6 +65,10 @@ class Fixture:
         self.goal = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=1)
         self.cancel = rospy.Publisher('/move_base/cancel', GoalID, queue_size=1)
         self.nav_cmd = rospy.Publisher('/cmd_vel_nav', Twist, queue_size=10)
+        self.obstacles = rospy.Publisher('/obstacles', Detection3DArray, queue_size=1)
+        self.tracks = None              # [(x, y, vx, vy)] in odom, published as /obstacles
+        self.teleop = rospy.Publisher('/cmd_vel_teleop', Twist, queue_size=1)
+        self.keys = None                # Twist the "driver" holds, published as /cmd_vel_teleop
         self.costmap = None
         self.odom = None
         self.commands = []
@@ -111,6 +129,10 @@ class Fixture:
             tf.transform.rotation.w = math.cos(yaw / 2.0)
             transforms.append(tf)
         self.tf.sendTransform(transforms)
+        if self.tracks is not None:
+            self.obstacles.publish(self.detections(stamp))
+        if self.keys is not None:
+            self.teleop.publish(self.keys)
         if self.mode == 'silent':
             return
         scan = LaserScan()
@@ -130,7 +152,27 @@ class Fixture:
                     distance = (self.wall_x - self.x) / heading
                     if 0.0 < distance < 10.0:
                         scan.ranges[i] = distance
+        elif self.mode == 'box':
+            for i in range(360):
+                distance = box_range(self.x, self.y, self.yaw + math.radians(i), BOX)
+                if distance is not None:
+                    scan.ranges[i] = distance
         self.scan.publish(scan)
+
+    def detections(self, stamp):
+        out = Detection3DArray()
+        out.header.stamp, out.header.frame_id = stamp, 'odom'
+        for i, (x, y, vx, vy) in enumerate(self.tracks):
+            det = Detection3D(header=out.header, id=str(i + 1))
+            det.bbox.center.position.x, det.bbox.center.position.y = x, y
+            det.bbox.center.orientation.w = 1.0
+            det.bbox.size.x, det.bbox.size.y, det.bbox.size.z = 0.4, 0.4, 0.5
+            hypothesis = ObjectHypothesisWithPose()
+            hypothesis.hypothesis.class_id, hypothesis.hypothesis.score = 'obstacle', 0.9
+            hypothesis.pose.pose.position.x, hypothesis.pose.pose.position.y = vx, vy
+            det.results.append(hypothesis)
+            out.detections.append(det)
+        return out
 
     def wait(self, predicate, seconds=15):
         deadline = time.monotonic() + seconds
@@ -149,6 +191,27 @@ class Fixture:
         if not (0 <= ix < info.width and 0 <= iy < info.height):
             return None
         return self.costmap.data[iy * info.width + ix]
+
+
+def box_range(x, y, angle, box):
+    """Distance along a ray from (x, y) to an axis-aligned box (cx, cy, hx, hy), or None."""
+    cx, cy, hx, hy = box
+    near, far = 0.0, float('inf')
+    for origin, direction, lo, hi in ((x, math.cos(angle), cx - hx, cx + hx),
+                                      (y, math.sin(angle), cy - hy, cy + hy)):
+        if abs(direction) < 1e-12:
+            if not lo <= origin <= hi:
+                return None
+            continue
+        t1, t2 = (lo - origin) / direction, (hi - origin) / direction
+        near, far = max(near, min(t1, t2)), min(far, max(t1, t2))
+    return near if 0.0 < near <= far else None
+
+
+def box_clearance(x, y, box):
+    """Distance from a point to the box's surface (0 inside)."""
+    cx, cy, hx, hy = box
+    return math.hypot(max(abs(x - cx) - hx, 0.0), max(abs(y - cy) - hy, 0.0))
 
 
 def main():
@@ -179,6 +242,12 @@ def main():
         fixture.mode = 'clear'
         fixture.wait(lambda: fixture.cost(OBSTACLE_X, 0.0) == 0)
         print('PASS: no-return rays clear the removed obstacle', flush=True)
+        fixture.tracks = [(MOVER_X, -1.0, 0.0, 0.5)]
+        fixture.wait(lambda: fixture.cost(*PREDICTED_CELL) == 100)
+        print('PASS: predicted path of a moving obstacle marked lethal ahead of it', flush=True)
+        fixture.tracks = []
+        fixture.wait(lambda: fixture.cost(*PREDICTED_CELL) == 0)
+        print('PASS: predicted cells clear once the obstacle is gone', flush=True)
 
         goal = PoseStamped()
         goal.header.frame_id, goal.header.stamp = 'map', rospy.Time.now()
@@ -218,6 +287,27 @@ def main():
         assert all(abs(x) < 1e-9 for t, x, _ in fixture.commands if t > sent), \
             'Guard passed a command through without a fresh scan'
         print('PASS: cmd_vel_guard holds the robot still when /scan stops', flush=True)
+
+        # Assisted driving: hold "W" towards a box 3 m ahead, from a fresh start pose.
+        fixture.x = fixture.y = fixture.yaw = 0.0
+        fixture.mode = 'box'
+        time.sleep(1.5)                     # fresh scans for the guard and teleop_assist
+        fixture.keys = Twist()
+        fixture.keys.linear.x = 0.5
+        track = {'clearance': float('inf'), 'offset': 0.0}
+
+        def passed():
+            track['clearance'] = min(track['clearance'],
+                                     box_clearance(fixture.x, fixture.y, BOX) - ROBOT_RADIUS)
+            track['offset'] = max(track['offset'], abs(fixture.y))
+            assert track['clearance'] > 0.0, 'Robot body touched the box'
+            return fixture.x > 6.0 and abs(fixture.yaw) < 0.2
+        fixture.wait(passed, seconds=45)
+        fixture.keys = None
+        assert track['offset'] > BOX[3], 'Robot did not steer around the box'
+        print('PASS: assisted driving steers around a box 3 m ahead (closest body clearance '
+              '%.2f m, %.2f m to the side) and returns to its heading'
+              % (track['clearance'], track['offset']), flush=True)
     finally:
         rospy.signal_shutdown('done')
         if roslaunch.poll() is None:
