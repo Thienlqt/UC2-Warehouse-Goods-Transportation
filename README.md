@@ -1,14 +1,12 @@
 # UC2: Warehouse Goods Transportation
 
-https://github.com/user-attachments/assets/3fb5381a-e46a-4794-bdf2-26769fbeb93b
+![Assisted driving in the Unity warehouse: the robot camera view with YOLO boxes, labels and scores while ROS steers around obstacles](docs/media/obstacle_avoidance_demo.gif)
 
 A TurtleBot3 Waffle drives through a simulated warehouse in **Unity** while **ROS 1 Noetic**
 (Ubuntu 20.04) maps it with SLAM, plans and follows routes with move_base while avoiding
 obstacles, and detects objects with the robot's camera and 2D lidar (boxes, labels, confidence).
 Tracked obstacles are predicted 2 s ahead, so the robot yields to or steers around moving ones.
 Driving by hand (P, hold W), ROS keeps the heading and steers around obstacles within 10 m.
-
-![Assisted driving in the Unity warehouse: the robot camera view with YOLO boxes, labels and scores while ROS steers around obstacles](docs/media/obstacle_avoidance_demo.gif)
 
 > ROS 1 Noetic reached end of life in May 2025 and Ubuntu 20.04's standard support ended in
 > April 2025: neither gets fixes or security updates any more. Keep the ROS machine (WSL or the
