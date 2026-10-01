@@ -1,6 +1,6 @@
 # UC2: Warehouse Goods Transportation
 
-
+https://github.com/user-attachments/assets/3fb5381a-e46a-4794-bdf2-26769fbeb93b
 
 A TurtleBot3 Waffle drives through a simulated warehouse in **Unity** while **ROS 1 Noetic**
 (Ubuntu 20.04) maps it with SLAM, plans and follows routes with move_base while avoiding
