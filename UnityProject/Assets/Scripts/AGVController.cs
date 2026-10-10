@@ -25,8 +25,29 @@ namespace RosSharp.Control
 
         public float ROSTimeout = 0.5f;
         private float lastCmdReceived = 0f;
-        // Seconds since the last cmd_vel from ROS (large if none has arrived).
-        public float SecondsSinceRosCommand => Time.time - lastCmdReceived;
+        // Diagnostics are read-only runtime properties; they are not saved into the prefab.
+        public int ReceivedRosCommandCount { get; private set; }
+        public float SecondsSinceRosCommand => ReceivedRosCommandCount == 0
+            ? float.PositiveInfinity : Time.time - lastCmdReceived;
+        public bool RosCommandIsFresh => SecondsSinceRosCommand <= ROSTimeout;
+        public float LastReceivedLinearSpeed { get; private set; }
+        public float LastReceivedAngularSpeed { get; private set; }
+        public bool WheelBodiesReady => wA1 != null && wA2 != null;
+        public Vector2 RequestedWheelSpeedsDegreesPerSecond { get; private set; }
+        public Vector2 TargetWheelSpeedsDegreesPerSecond => new Vector2(
+            wA1 != null ? wA1.xDrive.targetVelocity : float.NaN,
+            wA2 != null ? wA2.xDrive.targetVelocity : float.NaN);
+        public Vector2 MeasuredWheelSpeedsDegreesPerSecond => new Vector2(
+            MeasuredWheelSpeed(wA1), MeasuredWheelSpeed(wA2));
+        public bool Wheel1IsSleeping => wA1 != null && wA1.IsSleeping();
+        public bool Wheel2IsSleeping => wA2 != null && wA2.IsSleeping();
+
+        static float MeasuredWheelSpeed(ArticulationBody joint)
+        {
+            // Unity drive targets use degrees/s, but jointVelocity uses radians/s.
+            return joint != null && joint.jointType == ArticulationJointType.RevoluteJoint
+                && joint.dofCount == 1 ? joint.jointVelocity[0] * Mathf.Rad2Deg : float.NaN;
+        }
 
         ROSConnection ros;
         private RotationDirection direction;
@@ -35,8 +56,15 @@ namespace RosSharp.Control
 
         void Start()
         {
-            wA1 = wheel1.GetComponent<ArticulationBody>();
-            wA2 = wheel2.GetComponent<ArticulationBody>();
+            wA1 = wheel1 != null ? wheel1.GetComponent<ArticulationBody>() : null;
+            wA2 = wheel2 != null ? wheel2.GetComponent<ArticulationBody>() : null;
+            if (!WheelBodiesReady || wA1 == wA2)
+            {
+                Debug.LogError("AGVController: assign Wheel 1 and Wheel 2 to two different "
+                    + "wheel objects with ArticulationBody components.", this);
+                enabled = false;
+                return;
+            }
             SetParameters(wA1);
             SetParameters(wA2);
             ros = ROSConnection.GetOrCreateInstance();
@@ -47,6 +75,9 @@ namespace RosSharp.Control
         {
             rosLinear = (float)cmdVel.linear.x;
             rosAngular = (float)cmdVel.angular.z;
+            LastReceivedLinearSpeed = rosLinear;
+            LastReceivedAngularSpeed = rosAngular;
+            ReceivedRosCommandCount++;
             lastCmdReceived = Time.time;
         }
 
@@ -146,6 +177,7 @@ namespace RosSharp.Control
                 wheel1Rotation *= Mathf.Rad2Deg;
                 wheel2Rotation *= Mathf.Rad2Deg;
             }
+            RequestedWheelSpeedsDegreesPerSecond = new Vector2(wheel1Rotation, wheel2Rotation);
             SetSpeed(wA1, wheel1Rotation);
             SetSpeed(wA2, wheel2Rotation);
         }

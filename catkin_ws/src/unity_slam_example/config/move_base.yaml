@@ -26,20 +26,23 @@ NavfnROS:
   use_dijkstra: true            # Dijkstra rather than A*
   visualize_potential: false
 
-# Limits match the Unity AGVController clamp (0.2 m/s, 0.5 rad/s).
+# Conservative forward limit for Unity; its controller clamps turns to 0.5 rad/s.
 DWAPlannerROS:
   max_vel_trans: 0.2
-  min_vel_trans: 0.0
+  # DWA accepts a candidate if either minimum is met. Zero here also admits
+  # tiny in-place turns below min_vel_theta, which can stall Unity's wheels.
+  min_vel_trans: 0.03
   max_vel_x: 0.2
   min_vel_x: 0.0
   max_vel_y: 0.0
   min_vel_y: 0.0
   max_vel_theta: 0.5
-  min_vel_theta: 0.2            # DWA stalls turning in place at 0
+  min_vel_theta: 0.2
   acc_lim_x: 0.5
   acc_lim_y: 0.0
   acc_lim_trans: 0.5
-  acc_lim_theta: 1.0
+  # At 10 Hz, sample up to 0.25 rad/s from rest so a 0.2 rad/s turn is reachable.
+  acc_lim_theta: 2.5
   trans_stopped_vel: 0.02
   theta_stopped_vel: 0.02
   holonomic_robot: false
@@ -64,6 +67,14 @@ DWAPlannerROS:
   prune_plan: true
   publish_traj_pc: false
   publish_cost_grid_pc: false
+
+# rotate_recovery reads this legacy namespace even when DWA is the local planner.
+# Keep its requested turn rate within the Unity controller's limit.
+TrajectoryPlannerROS:
+  max_vel_theta: 0.5
+  min_in_place_vel_theta: 0.2
+  acc_lim_theta: 2.5
+  yaw_goal_tolerance: 0.25
 
 # Shared by both costmaps' obstacle layers.
 obstacle_layer_scan: &scan_source

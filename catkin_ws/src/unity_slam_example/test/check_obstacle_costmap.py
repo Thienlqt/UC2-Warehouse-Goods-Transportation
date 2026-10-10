@@ -20,6 +20,7 @@ import rospy  # noqa: E402
 from actionlib_msgs.msg import GoalID  # noqa: E402
 from geometry_msgs.msg import PoseStamped, TransformStamped, Twist  # noqa: E402
 from nav_msgs.msg import OccupancyGrid, Odometry  # noqa: E402
+from move_base_msgs.msg import MoveBaseActionResult  # noqa: E402
 from sensor_msgs.msg import LaserScan  # noqa: E402
 from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster  # noqa: E402
 from uc2_vision_msgs.msg import (Detection3D, Detection3DArray,  # noqa: E402
@@ -72,6 +73,8 @@ class Fixture:
         self.costmap = None
         self.odom = None
         self.commands = []
+        self.results = []
+        self.response_deadband = (0.0, 0.0)
         self.mode = 'obstacle'
         # Simulated planar pose driven by /cmd_vel, so the robot really closes on walls.
         self.x = self.y = self.yaw = 0.0
@@ -82,6 +85,7 @@ class Fixture:
         rospy.Subscriber('/move_base/local_costmap/costmap', OccupancyGrid, self.on_costmap)
         rospy.Subscriber('/odom', Odometry, self.on_odom)
         rospy.Subscriber('/cmd_vel', Twist, self.on_cmd)
+        rospy.Subscriber('/move_base/result', MoveBaseActionResult, self.results.append)
         rospy.Timer(rospy.Duration(0.05), lambda _: self.publish())
 
     def publish_static(self):
@@ -106,7 +110,55 @@ class Fixture:
 
     def on_cmd(self, msg):
         self.commands.append((time.monotonic(), msg.linear.x, msg.angular.z))
-        self.velocity = (msg.linear.x, msg.angular.z)
+        # Startup trials model the observed Unity response: tiny commands do not
+        # produce useful motion. Other checks keep the original ideal response.
+        minimum_linear, minimum_angular = self.response_deadband
+        self.velocity = (
+            msg.linear.x if abs(msg.linear.x) >= minimum_linear else 0.0,
+            msg.angular.z if abs(msg.angular.z) >= minimum_angular else 0.0,
+        )
+
+    def check_navigation_startup(self):
+        self.response_deadband = (0.025, 0.15)
+        try:
+            # Include goals requiring a quarter-turn and a half-turn before travel.
+            for yaw in (math.pi / 2.0, math.pi, 0.0):
+                self.x = self.y = 0.0
+                self.yaw = yaw
+                self.velocity = (0.0, 0.0)
+                time.sleep(1.5)  # let odometry/costmaps settle after resetting the pose
+                goal = PoseStamped()
+                goal.header.frame_id, goal.header.stamp = 'map', rospy.Time.now()
+                goal.pose.position.x = 2.0
+                goal.pose.orientation.w = 1.0
+                sent = time.monotonic()
+                self.goal.publish(goal)
+
+                def useful_command():
+                    return any(t >= sent and (abs(v) >= 0.025 or abs(w) >= 0.15)
+                               for t, v, w in self.commands)
+
+                self.wait(useful_command, seconds=2.0)
+                first = next(t for t, v, w in self.commands
+                             if t >= sent and (abs(v) >= 0.025 or abs(w) >= 0.15))
+                print('PASS: useful startup command within %.2f s (initial heading %.0f degrees)'
+                      % (first - sent, math.degrees(yaw)), flush=True)
+
+                def arrived():
+                    results = [r for r in self.results
+                               if r.status.goal_id.stamp >= goal.header.stamp]
+                    if not results:
+                        return False
+                    assert results[-1].status.status == 3, results[-1].status.text
+                    return True
+
+                self.wait(arrived, seconds=35.0)
+                assert math.hypot(self.x - 2.0, self.y) < 0.3, \
+                    'Navigation reported success outside the destination area'
+                print('PASS: startup goal reached in %.2f s (initial heading %.0f degrees)'
+                      % (time.monotonic() - sent, math.degrees(yaw)), flush=True)
+        finally:
+            self.response_deadband = (0.0, 0.0)
 
     def publish(self):
         now = time.monotonic()
@@ -248,6 +300,11 @@ def main():
         fixture.tracks = []
         fixture.wait(lambda: fixture.cost(*PREDICTED_CELL) == 0)
         print('PASS: predicted cells clear once the obstacle is gone', flush=True)
+
+        fixture.check_navigation_startup()
+        fixture.x = fixture.y = fixture.yaw = 0.0
+        fixture.velocity = (0.0, 0.0)
+        time.sleep(1.5)
 
         goal = PoseStamped()
         goal.header.frame_id, goal.header.stamp = 'map', rospy.Time.now()

@@ -20,6 +20,35 @@
   and first-person driving (**P**) must be off: while driving, `/cmd_vel` is ignored.
 - Goals must be in known free space on the map. Start with a route of a few metres.
 
+### Inspect commands and wheel motion in Unity
+
+While in Play mode, select `turtlebot3_manual_config` in the Hierarchy. In the Inspector,
+find **AGV Controller → Navigation diagnostics**. These values are read-only and refresh
+while the simulation runs. Send a nearby **2D Nav Goal**, then click **Copy diagnostics**
+to capture the current readings for troubleshooting.
+
+- **Received ROS commands / Last command age** show whether movement commands reach the
+  Unity controller. A connection or ROS subscriber alone does not prove command delivery.
+- **Last forward / turn command** preserve the most recent received command, including
+  after it times out. Forward speed is in metres/s; turning speed is in radians/s.
+- **Requested wheel speeds** are the controller's calculated wheel speeds after speed limits
+  and timeout handling. **Motor target speeds** read back the targets from Unity's wheel drives.
+- **Measured wheel speeds** read the actual wheel joint velocities, converted to degrees/s
+  to match the targets. X is Wheel 1 and Y is Wheel 2. `NaN` means the joint is unavailable
+  or is not a single-axis revolute joint. **Sleeping** shows each wheel's physics sleep state.
+
+| Observation during an active goal | Next area to inspect |
+|---|---|
+| No received commands, although ROS `/cmd_vel` contains commands | Unity receiver and TCP topic delivery |
+| Last command timed out | Command publication rate and connection continuity |
+| Fresh nonzero commands but zero requested wheel speeds | Controller mode and speed limits |
+| Requested speeds differ from motor targets | Another component modifying the wheel drives |
+| Nonzero motor targets but near-zero measured wheel speeds | Wheel joint constraints, sleeping, motor settings, or collisions |
+| Wheels turn but the robot stays in place | Ground contact, wheel traction, or body collisions |
+
+With separate Windows and WSL clones, the diagnostics script must be present in the Windows
+Unity clone. Restart the ROS side before the next Play session after Unity recompiles.
+
 ## Unity does not connect (red arrows in the Game view)
 
 - The ROS side must be running first and log `Starting server on 0.0.0.0:10000`.
@@ -60,6 +89,19 @@
 
 ## Unity
 
+- **Hundreds of `Trying to read value of type Dimension while reading a value of type
+  CommaSeparator` errors.** Perception 0.8.0-preview.3's `FloatRangeElement.uxml` has a
+  comma-separated `margin` value; Unity 2021.3 expects spaces. Run
+  `python3 scripts/fix_unity_perception_ui.py` from the repository root, then select another
+  object and reselect the robot, or reopen Unity to rebuild the Inspector. With separate
+  clones, point the script at the Windows project, for example:
+  `python3 scripts/fix_unity_perception_ui.py /mnt/d/Project/UC2-Warehouse-Goods-Transportation/UnityProject`.
+  The script changes only that margin in the generated package cache. Reapply it if you
+  delete `Library/` or reinstall the package; do not commit `Library/`.
+- **Errors after changing scripts during Play** (`No registered publisher`, null references
+  in the sensor publishers, or `the GUIStateObj is deleted`). Stop Play before editing
+  scripts or pulling changes. If a reload already broke the running session, stop Play,
+  stop ROS, and reopen Unity. Allow compilation to finish, then start ROS and press Play.
 - **First open takes long / package errors.** The first import takes 10–20 minutes. Package
   errors about git URLs mean `git` is not on the `PATH` (Windows: install Git for Windows, restart
   Unity Hub).

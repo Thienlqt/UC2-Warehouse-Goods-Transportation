@@ -83,10 +83,20 @@ results: re-tune them with the tests below and record the values you settle on.
 | Robot radius | 0.22 m | Inherited circular approximation; verify it covers the robot (also in `cmd_vel_guard`) |
 | Maximum forward speed | 0.2 m/s | Initial simulation test speed |
 | Maximum turn rate | 0.5 rad/s | Matches the Unity controller limit |
-| Minimum turn rate (`min_vel_theta`) | 0.2 rad/s | DWA stalls when asked to turn slower than the robot can |
+| Minimum translating speed (`min_vel_trans`) | 0.03 m/s | Reject barely moving candidates unless they have a useful turn rate |
+| Minimum turn rate (`min_vel_theta`) | 0.2 rad/s | With a positive translating minimum, reject weak in-place turns |
+| Turn acceleration (`acc_lim_theta`) | 2.5 rad/s² | Make the minimum turn rate reachable from rest in the 10 Hz dynamic window |
 | DWA prediction horizon (`sim_time`) | 2 s | Evaluate candidate motion against current obstacles |
 | Scoring (`path_distance_bias`, `goal_distance_bias`, `occdist_scale`) | 32, 24, 0.02 | Follow the path vs. head for the goal vs. keep away from obstacles |
 | Maximum scan interval (`expected_update_rate`) | 0.5 s | Mark the observation source stale if scans stop |
+
+DWA requires a candidate to meet at least one of its translating/turning minimums.
+Setting `min_vel_trans` to zero permits tiny in-place turns even when `min_vel_theta`
+is positive. The startup settings above prevent that stall while `min_vel_x: 0`
+still permits rotation without driving forward. They are planner sampling limits;
+the collision checks and `cmd_vel_guard` can still slow or stop the robot. The
+`TrajectoryPlannerROS` section also limits the separate rotate-recovery plugin to
+the same 0.5 rad/s maximum. Restart ROS after editing these settings.
 
 Keep `marking`, `clearing`, and `inf_is_valid` enabled. Unity publishes positive
 infinity for rays with no hit, allowing the obstacle layer to clear them. A hidden
@@ -272,7 +282,9 @@ prediction geometry and grid (`test/test_avoidance_math.py`). `test/check_obstac
 runs the real Noetic move_base, `cmd_vel_guard`, `tf_odometry` and `predicted_obstacles` with
 synthetic TF, map, scans and tracks. It checks obstacle marking and clearing, the predicted path
 of a moving track being marked and then cleared, forward commands, stopping short of a wall, and
-the guard's stop when scans cease. Finally it holds "W" towards a box 3 m ahead and checks that
+the guard's stop when scans cease. Startup trials use headings of 0, 90 and 180 degrees and
+model a motor deadband for very weak commands: each trial must produce useful motion commands
+within 2 s and complete the goal. Finally it holds "W" towards a box 3 m ahead and checks that
 `teleop_assist` steers around it without the body touching it, then turns back to its heading.
 `test/test_teleop_math.py` covers the steering choice. Its simulated robot moves according to `/cmd_vel`, so the wall check fails if the
 robot body (`robot_radius`) ever reaches the wall. It starts its own ROS master on port 11312,
