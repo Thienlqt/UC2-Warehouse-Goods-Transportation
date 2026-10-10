@@ -8,6 +8,8 @@ obstacles, and detects objects with the robot's camera and 2D lidar (boxes, labe
 Tracked obstacles are predicted 2 s ahead, so the robot yields to or steers around moving ones.
 Driving by hand (P, hold W), ROS keeps the heading and steers around obstacles within 10 m.
 
+![RViz during path planning: the camera detections panel with YOLO boxes beside the SLAM map, costmap and the planned path to a 2D Nav Goal](docs/media/rviz_path_planning_demo.gif)
+
 > ROS 1 Noetic reached end of life in May 2025 and Ubuntu 20.04's standard support ended in
 > April 2025: neither gets fixes or security updates any more. Keep the ROS machine (WSL or the
 > Docker container) off untrusted networks.

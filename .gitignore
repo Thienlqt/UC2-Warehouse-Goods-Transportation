@@ -4,6 +4,9 @@ CLAUDE.md
 # Local notes (not part of the published docs in docs/)
 OBSTACLE_DETECTION_AND_AVOIDANCE.md
 
+# Source screen recordings (too large for git; the README uses the GIFs in docs/media/)
+/*.mp4
+
 # OS / editors
 .DS_Store
 Thumbs.db
