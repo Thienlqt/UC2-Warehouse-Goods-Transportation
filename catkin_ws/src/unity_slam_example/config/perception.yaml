@@ -9,6 +9,14 @@ lidar_obstacles:
   min_points: 3
   track_gate: 0.6             # max centre jump (m) between scans for the same track
   max_misses: 3               # scans without a match before a track is dropped
+  # Motion check: a track's velocity is published only when the scan sees free space where the
+  # track's points were 0.4-1.0 s earlier. A static box's centre drifts as faces come into view,
+  # which fooled the Kalman velocity alone into sweeping static boxes across the path.
+  motion_min_age: 0.4         # compare with points at least this old (s)
+  motion_max_age: 1.0         # and at most this old (s)
+  motion_margin: 0.15         # a beam must pass this far beyond an old point to count it free (m)
+  motion_min_evidence: 3      # points needed for a moving or static verdict
+  motion_moved_fraction: 0.25 # share of the evidence points that must be free to call it moving
 
 camera_detector:
   # Defaults: models/detector.onnx and models/classes.txt installed with this package.

@@ -7,8 +7,9 @@ Unity's first-person drive (P) publishes the driver's keys on /cmd_vel_teleop.
 - Forward and turning (W + A/D): the turn passes through and the held heading follows it; the
   speed still drops before an obstacle straight ahead.
 - Reverse or turning in place: passes through; cmd_vel_guard still guards it.
-The first command cancels any move_base goal. When commands stop for teleop_timeout, the node
-sends one zero twist and goes quiet, so move_base can drive again.
+The first key press cancels any move_base goal. When the keys are released (a zero twist) or
+commands stop for teleop_timeout, the node sends one zero twist and goes quiet, so move_base can
+drive again, also while Unity stays in first-person view.
 """
 
 import math
@@ -96,7 +97,9 @@ class TeleopAssist:
         command = self.command
         if command is None:
             return
-        if (rospy.Time.now() - command[0]).to_sec() > self.teleop_timeout:
+        cmd = command[1]
+        idle = abs(cmd.linear.x) < 1e-6 and abs(cmd.angular.z) < 1e-6
+        if idle or (rospy.Time.now() - command[0]).to_sec() > self.teleop_timeout:
             if self.active:     # the driver let go (or left first-person drive)
                 self.publisher.publish(Twist())
                 self.active, self.desired, self.previous = False, None, None
@@ -111,7 +114,7 @@ class TeleopAssist:
             return
         yaw = quaternion_to_yaw(pose.transform.rotation)
         points = self.obstacle_points()
-        cmd, out = command[1], Twist()
+        out = Twist()
         if points is None:
             pass                            # no fresh scan: hold still (the guard would too)
         elif cmd.linear.x > 0.0 and abs(cmd.angular.z) < 1e-3:

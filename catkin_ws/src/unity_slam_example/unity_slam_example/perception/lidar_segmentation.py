@@ -6,7 +6,7 @@ Box fitting: search-based L-shape fitting (Zhang et al. 2017, closeness criterio
 an oriented rectangle even when only one or two faces of an object are visible.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 
 import numpy as np
@@ -21,6 +21,8 @@ class Box:
     width: float
     num_points: int
     fit_error: float  # mean distance of points to the nearest rectangle edge (m)
+    # The segment's scan points (Nx2, same frame as the centre); the tracker's motion check.
+    points: np.ndarray = field(default=None, repr=False, compare=False)
 
 
 def scan_points(ranges, angle_min, angle_increment, range_min, range_max):
@@ -114,5 +116,6 @@ def detect_boxes(ranges, angle_min, angle_increment, range_min, range_max, max_e
     for seg in segment(pts, idx, angle_increment, len(ranges), **segment_args):
         box = fit_box(pts[seg])
         if max(box.length, box.width) <= max_extent:
+            box.points = pts[seg]
             boxes.append(box)
     return boxes

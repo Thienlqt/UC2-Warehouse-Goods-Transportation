@@ -28,6 +28,7 @@ lacks.
 | LiDAR segmentation | Adaptive breakpoint detection (Borges & Aldon) | Splits objects with a range-dependent gap threshold, robust as points spread out with distance |
 | LiDAR boxes | L-shape fitting (Zhang et al. 2017), with a least-squares refinement | Oriented rectangle even when only one or two faces are visible |
 | Tracking | Constant-velocity Kalman filter + Hungarian matching, in `odom` | Stable IDs and velocities; robot motion is not mistaken for object motion |
+| Motion check | A track counts as moving only when a later scan sees free space where its points were 0.4–1 s earlier | A box's centre drifts as its faces come into view or segments split and merge, so the Kalman velocity alone calls static boxes moving |
 | Fusion | Late fusion: project lidar boxes into the image, match by horizontal (bearing) IoU | A 2D scan has no height, so only the horizontal extent is compared |
 
 Confidence scores:
@@ -149,6 +150,9 @@ cd catkin_ws/src/unity_slam_example && python3 -m pytest -q test/
 - The 2D lidar sees only its scan plane (~0.13 m above the base). Anything entirely above or below
   it is invisible to the lidar and gets no 3D box; the camera may still detect it in 2D.
 - Box height is not measured; 3D boxes use a fixed 0.5 m height for display.
+- An object coming straight at the lidar hides the points it left, so the motion check sees no
+  free space and reports it as static (velocity 0) until it also moves sideways. The scan and
+  `cmd_vel_guard` still stop the robot for it.
 - The warehouse model has no `person` class yet; pedestrians and a retrain are the next milestone.
 - It is trained only on this warehouse's rendered assets. Validation frames come from new layouts of
   the same assets, so the scores measure this simulation, not real cameras or other warehouses.

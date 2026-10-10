@@ -87,16 +87,26 @@ results: re-tune them with the tests below and record the values you settle on.
 | Minimum turn rate (`min_vel_theta`) | 0.2 rad/s | With a positive translating minimum, reject weak in-place turns |
 | Turn acceleration (`acc_lim_theta`) | 2.5 rad/s² | Make the minimum turn rate reachable from rest in the 10 Hz dynamic window |
 | DWA prediction horizon (`sim_time`) | 2 s | Evaluate candidate motion against current obstacles |
-| Scoring (`path_distance_bias`, `goal_distance_bias`, `occdist_scale`) | 32, 24, 0.02 | Follow the path vs. head for the goal vs. keep away from obstacles |
+| Scoring (`path_distance_bias`, `goal_distance_bias`, `occdist_scale`) | 32, 24, 0.1 | Follow the path vs. head for the goal vs. keep away from obstacles |
+| Recovery (`recovery_behaviors`) | Clear obstacle layer outside 3 m, then outside 0.92 m | Replan on a cleaned costmap; no in-place spins |
 | Maximum scan interval (`expected_update_rate`) | 0.5 s | Mark the observation source stale if scans stop |
 
 DWA requires a candidate to meet at least one of its translating/turning minimums.
 Setting `min_vel_trans` to zero permits tiny in-place turns even when `min_vel_theta`
 is positive. The startup settings above prevent that stall while `min_vel_x: 0`
 still permits rotation without driving forward. They are planner sampling limits;
-the collision checks and `cmd_vel_guard` can still slow or stop the robot. The
-`TrajectoryPlannerROS` section also limits the separate rotate-recovery plugin to
-the same 0.5 rad/s maximum. Restart ROS after editing these settings.
+the collision checks and `cmd_vel_guard` can still slow or stop the robot. Restart ROS after
+editing these settings.
+
+`occdist_scale` was 0.02, which let DWA follow the path within about 0.25 m of thin objects
+such as posts. The scan marks those only from close up, and once the robot's footprint touches
+a lethal cell every trajectory is invalid, so the goal fails. At 0.1 the robot keeps about
+0.45 m from obstacles in the Unity warehouse.
+
+Recovery clears the scan obstacles (`obstacle_layer`) and replans. move_base's default list also
+spins the robot twice on the spot (`rotate_recovery`). With a 360 degree lidar a spin shows
+nothing new, so it is left out. The clears name `obstacle_layer` explicitly: their default layer
+name, `obstacles`, matches nothing in these costmaps, so the default clears did nothing.
 
 Keep `marking`, `clearing`, and `inf_is_valid` enabled. Unity publishes positive
 infinity for rays with no hit, allowing the obstacle layer to clear them. A hidden
@@ -116,7 +126,9 @@ scene already overrides the Unity TF publisher to start at `odom`.
 ## Moving and labelled obstacles
 
 With perception on, `predicted_obstacles` reads the fused tracks on `/obstacles` (box, class,
-score, velocity in `odom`). Ten times a second, it publishes `/obstacles_predicted`: a 6 × 6 m,
+score, velocity in `odom`). A track's velocity is zero until the scan confirms that it moves
+([obstacle_detection.md](obstacle_detection.md)): driving past a static box no longer makes it
+look like it is moving, so its predicted path no longer blocks the robot's own route. Ten times a second, it publishes `/obstacles_predicted`: a 6 × 6 m,
 5 cm grid around the robot.
 - Each confident moving track (score ≥ 0.3, speed ≥ 0.15 m/s) sweeps its box outline along its
   velocity for 2 s. The swept cells are lethal.
@@ -143,7 +155,7 @@ Tune `predicted_obstacles` in `config/perception.yaml`:
 | Setting | Initial value | Purpose |
 |---|---:|---|
 | `horizon` / `step` | 2 s / 0.2 s | How far ahead to predict (DWA `sim_time`) and how finely |
-| `min_speed` | 0.15 m/s | Slower tracks count as static (Kalman velocity noise on parked boxes) |
+| `min_speed` | 0.15 m/s | Slower tracks count as static |
 | `min_confidence` | 0.3 | Fused scores can be lower than lidar-only ones |
 | `padding` | `person: 0.35` m | Extra clearance per class; unlisted classes get none |
 | `keep_out` | 0.45 m | No predicted cells this close to the robot centre |
@@ -185,8 +197,9 @@ them into `/cmd_vel_nav`, which `cmd_vel_guard` still checks:
 - **W with A/D:** you steer and the held heading follows you. It still slows before an obstacle
   straight ahead.
 - **S, or A/D alone:** passed through. The guard still stops short of obstacles.
-- The first key press cancels any navigation goal. When you leave P mode, ROS stops sending
-  commands and navigation goals work again.
+- The first key press cancels any navigation goal. When you release the keys (or leave P mode),
+  `teleop_assist` goes quiet and navigation goals work again, also in the first-person view.
+  In direct mode (**O**) navigation goals are ignored.
 
 The settings are on the `teleop_assist` node in the launch file: `lookahead` (10 m), `margin`
 (0.2 m), `max_turn` (0.5 rad/s), plus `span_deg`, `turn_gain`, `stop_distance`,
@@ -246,8 +259,8 @@ Start moving-obstacle trials slowly. Prediction assumes constant velocity (see
 [Moving and labelled obstacles](#moving-and-labelled-obstacles)), and 2D lidar only
 detects geometry intersecting the scan plane. Repeat each trial with `perception:=false`
 (Ubuntu / WSL: `bash scripts/run_ros.sh perception:=false`) to compare against scan-only avoidance. A
-blocked-route goal aborts after move_base's recovery behaviours (clear costmaps,
-rotate); resend the goal once the passage is free. SLAM may retain a transient
+blocked-route goal aborts after move_base's recovery behaviours (two costmap clears);
+resend the goal once the passage is free. SLAM may retain a transient
 object in `/map` even after the local obstacle layer clears it. For controlled
 moving-obstacle evaluation, map the empty environment first and coordinate a
 saved-map/localization workflow with the mapping teammate.

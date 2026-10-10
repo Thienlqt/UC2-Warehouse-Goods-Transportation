@@ -13,7 +13,8 @@ using UnityEngine.Rendering;
 /// Keys: W/S or Up/Down drive, A/D or Left/Right turn. The Game view needs keyboard focus.
 /// Assisted (default, AssistKey O toggles): the keys go to ROS on TeleopTopic and the robot
 /// follows ROS cmd_vel. ROS teleop_assist holds the heading while W is held and steers around
-/// obstacles ahead; cmd_vel_guard brakes. Direct: the keys drive the wheels, ROS is ignored.
+/// obstacles ahead; cmd_vel_guard brakes. With no key held, navigation goals drive the robot.
+/// Direct: the keys drive the wheels, ROS is ignored.
 /// </summary>
 public class FirstPersonDrive : MonoBehaviour
 {
@@ -107,8 +108,14 @@ public class FirstPersonDrive : MonoBehaviour
             // ROS twist: +x forward, +z counter-clockwise (A / Left turns left).
             float forward = KeyDirection("Vertical");
             float left = -KeyDirection("Horizontal");
-            m_KeysHeld = forward != 0 || left != 0;
-            PublishTeleop(forward * LinearSpeed, left * AngularSpeed);
+            bool held = forward != 0 || left != 0;
+            // Publish only while keys are held, plus one zero on release, so a 2D Nav Goal can
+            // drive the robot while the driver keeps the first-person view without touching keys.
+            if (held || m_KeysHeld)
+            {
+                PublishTeleop(forward * LinearSpeed, left * AngularSpeed);
+            }
+            m_KeysHeld = held;
         }
     }
 

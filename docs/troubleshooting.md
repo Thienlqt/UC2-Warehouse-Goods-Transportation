@@ -17,7 +17,8 @@
   `rostopic echo /cmd_vel_nav` (move_base) with `/cmd_vel` (after the guard): near obstacles the
   guard slows the command on purpose.
 - **Robot controller mode.** On `TurtleBot3ManualConfig`, the AGV Controller must be in ROS mode,
-  and first-person driving (**P**) must be off: while driving, `/cmd_vel` is ignored.
+  and first-person driving (**P**) must be off or in assisted mode: in direct mode (**O**),
+  `/cmd_vel` is ignored. In assisted mode, holding a drive key cancels the goal.
 - Goals must be in known free space on the map. Start with a route of a few metres.
 
 ### Inspect commands and wheel motion in Unity
