@@ -4,7 +4,8 @@ import numpy as np
 
 from test_lidar_segmentation import raycast, rectangle
 from unity_slam_example.perception.lidar_segmentation import Box, detect_boxes
-from unity_slam_example.perception.tracking import boxes_to_frame, scan_motion_evidence, Tracker
+from unity_slam_example.perception.tracking import (boxes_to_frame, mask_returns,
+                                                    scan_motion_evidence, Tracker)
 
 
 def box(x, y):
@@ -52,7 +53,7 @@ def drive(polygons_at, sensor_at, steps, dt=0.1):
         ranges = raycast(shifted)
         boxes = boxes_to_frame(detect_boxes(ranges, 0.0, math.radians(1), 0.12, 10.0), sx, sy, 0)
 
-        def evidence(points):
+        def evidence(points, sx=sx, sy=sy, ranges=ranges):    # the tracker keeps it for later
             return scan_motion_evidence(points, (sx, sy, 0.0), ranges, 0.0, math.radians(1),
                                         0.12, 10.0)
         history.append(tracker.step(boxes, k * dt, evidence))
@@ -78,6 +79,23 @@ def test_box_crossing_in_front_is_moving_at_its_velocity():
     assert abs(vx) < 0.1 and abs(vy - 0.5) < 0.1
 
 
+def test_static_box_driven_at_is_not_moving():
+    history = drive(lambda t: [rectangle(3.0, 0.0, 0.0, 0.5, 0.5)], lambda t: (0.4 * t, 0.0), 40)
+    tracks = [t for step in history for t in step]
+    assert tracks and all(t.velocity == (0.0, 0.0) for t in tracks)
+
+
+def test_box_coming_straight_at_the_sensor_is_moving():
+    # Its earlier points are hidden behind it, so only the earlier scans, which saw through the
+    # space it now occupies, can tell that it moves.
+    history = drive(lambda t: [rectangle(4.0 - 0.5 * t, 0.0, 0.0, 0.4, 0.4)],
+                    lambda t: (0.0, 0.0), 20)
+    (track,) = history[-1]
+    assert track.moving
+    vx, vy = track.velocity
+    assert abs(vx + 0.5) < 0.1 and abs(vy) < 0.1
+
+
 def test_motion_evidence_counts_points_left_free_and_points_still_hit():
     ranges = raycast([rectangle(2.05, 0.0, 0.0, 0.1, 4.0)])  # wall face at x = 2
     args = ((0.0, 0.0, 0.0), ranges, 0.0, math.radians(1), 0.12, 10.0)
@@ -93,3 +111,18 @@ def test_motion_evidence_counts_points_left_free_and_points_still_hit():
     turned = world[30:] + world[:30]        # beam i of the turned sensor looks along i + 30 deg
     assert scan_motion_evidence(on_wall, (0.5, 0.0, math.radians(30)), turned, 0.0,
                                 math.radians(1), 0.12, 10.0) == (0, 5)
+
+
+def test_mask_returns_blanks_only_returns_on_the_boxes():
+    # A wall at x = 3 and a box at (1.5, 0) in front of it, seen from (0.5, 0) facing +x.
+    world = [rectangle(3.05, 0.0, 0.0, 0.1, 6.0), rectangle(1.5, 0.0, 0.0, 0.4, 0.4)]
+    ranges = raycast([[(x - 0.5, y) for x, y in poly] for poly in world])
+    masked = mask_returns(ranges, 0.0, math.radians(1), (0.5, 0.0, 0.0),
+                          [(1.5, 0.0, 0.0, 0.4, 0.4)])
+    on_box = [i for i, r in enumerate(ranges) if math.isfinite(r) and r < 1.5]
+    assert on_box and all(math.isnan(masked[i]) for i in on_box)
+    others = [i for i in range(len(ranges)) if i not in on_box]
+    assert all(masked[i] == ranges[i] or (math.isinf(masked[i]) and math.isinf(ranges[i]))
+               for i in others)
+    assert np.array_equal(mask_returns(ranges, 0.0, math.radians(1), (0.5, 0.0, 0.0), []),
+                          np.array(ranges))

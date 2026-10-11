@@ -96,11 +96,26 @@ def test_boxes_moving_away_or_alongside_do_not_limit():
     assert guard_twist(0.2, 0.0, NO_POINTS, movers=[mover(0.0, 0.6, vx=0.2)]) == (0.2, 0.0)
 
 
-def test_box_already_touching_is_ignored():
-    assert guard_twist(0.2, 0.0, NO_POINTS, movers=[mover(0.3, 0.0, vx=-0.5)]) == (0.2, 0.0)
+def test_box_already_touching_blocks_driving_into_it_but_not_backing_away():
+    touching = mover(0.3, 0.0, vx=-0.1)
+    assert guard_twist(0.2, 0.0, NO_POINTS, movers=[touching]) == (0.0, 0.0)
+    assert guard_twist(-0.1, 0.0, NO_POINTS, movers=[touching]) == (-0.1, 0.0)
+    assert guard_twist(0.0, 0.5, NO_POINTS, movers=[touching]) == (0.0, 0.5)
 
 
 def test_box_that_would_hit_a_stopped_robot_does_not_freeze_it():
     # Stopping cannot avoid it, so turning (or driving clear) stays allowed.
     incoming = mover(0.0, -0.8, vy=0.8)
     assert guard_twist(0.0, 0.5, NO_POINTS, movers=[incoming]) == (0.0, 0.5)
+    # Driving forward, out of its way, is allowed too.
+    assert guard_twist(0.2, 0.0, NO_POINTS, movers=[incoming]) == (0.2, 0.0)
+
+
+def test_robot_does_not_drive_into_a_box_crossing_just_ahead():
+    # The robot's nose already reaches the lane of a box crossing from the right (it would clip
+    # a stopped robot), so stopping cannot avoid contact. Driving on into the lane would make it
+    # worse: the guard stops that, while backing out is allowed.
+    crossing = mover(0.35, -0.5, vy=0.5, size=0.3)
+    v, _ = guard_twist(0.2, 0.0, NO_POINTS, movers=[crossing])
+    assert v == pytest.approx(0.2 * 0.3 / 1.2)
+    assert guard_twist(-0.1, 0.0, NO_POINTS, movers=[crossing]) == (-0.1, 0.0)

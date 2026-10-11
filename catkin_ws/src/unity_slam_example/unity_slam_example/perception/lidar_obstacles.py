@@ -2,7 +2,11 @@
 
 Every box is class "obstacle" with a geometric confidence; the fusion node adds camera labels.
 A track's velocity is published only once the scan confirms that it moves (see tracking).
+Also publishes /scan_static: the scan without the returns from moving tracks, for SLAM, so
+moving obstacles leave no trail in the map. The costmaps keep using /scan.
 """
+
+import copy
 
 import rospy
 from sensor_msgs.msg import LaserScan
@@ -11,7 +15,7 @@ from uc2_vision_msgs.msg import Detection3D, Detection3DArray, ObjectHypothesisW
 
 from .lidar_segmentation import detect_boxes
 from .ros_utils import quaternion_to_yaw, stamp_to_seconds, yaw_to_quaternion
-from .tracking import boxes_to_frame, scan_motion_evidence, Tracker
+from .tracking import boxes_to_frame, mask_returns, scan_motion_evidence, Tracker
 
 
 class LidarObstacles:
@@ -33,7 +37,9 @@ class LidarObstacles:
         self.motion_margin = rospy.get_param('~motion_margin', 0.15)
         self.buffer = Buffer()
         self.listener = TransformListener(self.buffer)
+        self.mask_margin = rospy.get_param('~static_scan_margin', 0.1)
         self.publisher = rospy.Publisher('/obstacles_lidar', Detection3DArray, queue_size=10)
+        self.static_publisher = rospy.Publisher('/scan_static', LaserScan, queue_size=5)
         rospy.Subscriber('/scan', LaserScan, self.on_scan, queue_size=5)
 
     def lookup(self, scan):
@@ -61,6 +67,13 @@ class LidarObstacles:
                                         scan.angle_increment, scan.range_min, scan.range_max,
                                         self.motion_margin)
         tracks = self.tracker.step(boxes, stamp_to_seconds(scan.header.stamp), evidence)
+
+        static = copy.copy(scan)
+        static.ranges = mask_returns(
+            scan.ranges, scan.angle_min, scan.angle_increment, pose,
+            [(t.x[0], t.x[1], t.yaw, t.length, t.width) for t in tracks if t.moving],
+            self.mask_margin).tolist()
+        self.static_publisher.publish(static)
 
         out = Detection3DArray()
         out.header.stamp = scan.header.stamp

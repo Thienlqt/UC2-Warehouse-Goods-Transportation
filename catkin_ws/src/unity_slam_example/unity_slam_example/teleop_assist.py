@@ -33,7 +33,7 @@ class TeleopAssist:
     def __init__(self):
         self.base_frame = rospy.get_param('~base_frame', 'base_link')
         self.odom_frame = rospy.get_param('~odom_frame', 'odom')
-        self.radius = rospy.get_param('~robot_radius', 0.22)
+        self.radius = rospy.get_param('~robot_radius', 0.25)
         self.args = {
             'half_width': self.radius + rospy.get_param('~margin', 0.2),
             'lookahead': rospy.get_param('~lookahead', 10.0),

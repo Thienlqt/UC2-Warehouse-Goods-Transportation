@@ -19,7 +19,9 @@
 - **Robot controller mode.** On `TurtleBot3ManualConfig`, the AGV Controller must be in ROS mode,
   and first-person driving (**P**) must be off or in assisted mode: in direct mode (**O**),
   `/cmd_vel` is ignored. In assisted mode, holding a drive key cancels the goal.
-- Goals must be in known free space on the map. Start with a route of a few metres.
+- Goals must be in known free space on the map, at least 0.25 m (the robot's radius) from
+  obstacles: move_base logs "Failed to get a plan" and does not move for a goal it cannot reach,
+  rather than heading somewhere nearby. Start with a route of a few metres.
 
 ### Inspect commands and wheel motion in Unity
 
@@ -49,6 +51,23 @@ to capture the current readings for troubleshooting.
 
 With separate Windows and WSL clones, the diagnostics script must be present in the Windows
 Unity clone. Restart the ROS side before the next Play session after Unity recompiles.
+
+## The robot turns on the spot near obstacles
+
+- **Old move_base settings.** Before the October 2026 tuning, the robot often stopped 1–3 m from a
+  shelf and turned, sometimes all the way round, before driving round it
+  ([why](obstacle_avoidance.md#why-the-robot-used-to-turn-on-the-spot-near-shelves)). Pull, then
+  restart the ROS side: both run scripts rebuild the workspace.
+- **A turn at the goal is normal.** Once in position, the robot turns to the goal arrow's
+  heading (`latch_xy_goal_tolerance`).
+- **The passage is too narrow.** With less than about 0.15 m either side of the 0.50 m robot,
+  DWA hesitates in front of the gap, and the global path may switch to another route. RViz's
+  **Global Path** shows where it is trying to go.
+- **It hit something first.** Contact with an obstacle lower than the lidar plane (0.13 m), such
+  as a pallet edge, is invisible to move_base and the guard; the robot keeps pushing, then
+  move_base's recovery clears and replans. Keep such objects out of the robot's routes.
+- **A moving box is in the way.** **Predicted Obstacles** shows where tracked boxes will be in
+  the next 2 s; the robot waits for that band to clear.
 
 ## Unity does not connect (red arrows in the Game view)
 

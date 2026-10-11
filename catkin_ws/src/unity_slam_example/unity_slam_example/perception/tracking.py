@@ -5,8 +5,10 @@ not look like moving obstacles.
 
 The Kalman velocity alone is not trusted: a lidar box's centre is the centre of the part that is
 visible, so it shifts whenever a face comes into view or a segment splits or merges, even on a
-static box. A track counts as moving only when a later scan sees free space where its earlier
-points were (scan_motion_evidence); otherwise its velocity is reported as zero.
+static box. A track counts as moving only when the scan shows it moved through space
+(scan_motion_evidence): a later scan sees free space where its earlier points were, or its points
+now lie where an earlier scan saw free space. The second catches objects coming straight at the
+sensor, whose earlier points are hidden behind them. Otherwise its velocity is reported as zero.
 """
 
 from dataclasses import dataclass, field
@@ -73,6 +75,7 @@ class Tracker:
     tracks: list = field(default_factory=list)
     _ids: itertools.count = field(default_factory=lambda: itertools.count(1))
     _last_stamp: float = None
+    _scans: list = field(default_factory=list)  # [(stamp, evidence)] of recent scans
 
     def _predict(self, dt):
         F = np.eye(4)
@@ -105,15 +108,20 @@ class Tracker:
         """Advance to `stamp` (s) with the boxes observed then; returns the live tracks.
 
         `evidence(points)` -> (moved, stayed) checks earlier points of a track (fixed frame)
-        against the scan these boxes came from (scan_motion_evidence). Without it, motion cannot
+        against the scan these boxes came from (scan_motion_evidence). The tracker keeps it for
+        motion_max_age, to check later points against this scan too. Without it, motion cannot
         be checked and every confirmed track is taken as moving at its Kalman velocity.
         """
         dt = 0.0 if self._last_stamp is None else max(0.0, stamp - self._last_stamp)
         if self._last_stamp is not None and stamp < self._last_stamp - 1.0:
             self.tracks.clear()    # simulation clock reset (Play restarted)
+            self._scans.clear()
             dt = 0.0
         self._last_stamp = stamp
         self._predict(dt)
+        # The oldest scan within the motion window: the largest displacement since.
+        past = next((e for t, e in self._scans
+                     if self.motion_min_age <= stamp - t <= self.motion_max_age), None)
 
         matched_tracks, matched_boxes = set(), set()
         if self.tracks and boxes:
@@ -122,7 +130,7 @@ class Tracker:
             for ti, bi in zip(*linear_sum_assignment(cost)):
                 if cost[ti, bi] <= self.gate:
                     self._update(self.tracks[ti], boxes[bi], stamp)
-                    self._check_motion(self.tracks[ti], boxes[bi], stamp, evidence)
+                    self._check_motion(self.tracks[ti], boxes[bi], stamp, evidence, past)
                     matched_tracks.add(ti)
                     matched_boxes.add(bi)
 
@@ -138,18 +146,30 @@ class Tracker:
                 self.tracks.append(Track(next(self._ids), np.array([b.x, b.y, 0.0, 0.0]), P,
                                          b.yaw, b.length, b.width, b.num_points, b.fit_error,
                                          stamp=stamp))
-                self._check_motion(self.tracks[-1], b, stamp, evidence)
+                self._check_motion(self.tracks[-1], b, stamp, evidence, past)
+        if evidence is not None:
+            self._scans = [(t, e) for t, e in self._scans if stamp - t <= self.motion_max_age]
+            self._scans.append((stamp, evidence))
         return [t for t in self.tracks if t.confirmed]
 
-    def _check_motion(self, track, box, stamp, evidence):
-        """Update track.moving from the scan, then remember the box's points for later checks."""
+    def _check_motion(self, track, box, stamp, evidence, past=None):
+        """Update track.moving from the scan, then remember the box's points for later checks.
+
+        Evidence both ways: the track's earlier points against this scan (has it left where it
+        was?) and its points now against an earlier scan `past` (was this space free before?).
+        """
         if evidence is None:
             track.moving = True
             return
+        moved = stayed = 0
         old = [p for t, p in track.history
                if self.motion_min_age <= stamp - t <= self.motion_max_age]
         if old:
             moved, stayed = evidence(old[0])        # the oldest: the largest displacement
+        if past is not None and box.points is not None:
+            entered, still = past(box.points)
+            moved, stayed = moved + entered, stayed + still
+        if moved or stayed:
             if moved >= self.min_evidence and moved >= self.moved_fraction * (moved + stayed):
                 track.moving = True
             elif stayed >= self.min_evidence and moved < self.moved_fraction * (moved + stayed):
@@ -169,8 +189,9 @@ def scan_motion_evidence(points, sensor_pose, ranges, angle_min, angle_increment
     surface cannot do this, however its visible extent changes.
     stayed: a beam either side still returns within `margin` of the point's range.
     A point now hidden behind something nearer, or outside the scan, gives no evidence: an object
-    coming straight at the sensor therefore stays "static" until it also moves sideways.
-    `sensor_pose` is the new scan's (x, y, yaw) in the fixed frame.
+    coming straight at the sensor hides its own earlier points. Tracker therefore also checks
+    an object's new points against an earlier scan (moved: that scan saw through them).
+    `sensor_pose` is the scan's (x, y, yaw) in the fixed frame.
     """
     pts = np.asarray(points, dtype=np.float64).reshape(-1, 2)
     r = np.asarray(ranges, dtype=np.float64)
@@ -201,6 +222,30 @@ def scan_motion_evidence(points, sensor_pose, ranges, angle_min, angle_increment
             (old_r + margin < range_max)
         stayed = inside & ~moved & ((np.abs(ra - old_r) <= margin) | (np.abs(rb - old_r) <= margin))
     return int(moved.sum()), int(stayed.sum())
+
+
+def mask_returns(ranges, angle_min, angle_increment, sensor_pose, boxes, margin=0.1):
+    """Copy of `ranges` with NaN (no reading) for returns inside any of `boxes`.
+
+    boxes: (x, y, yaw, length, width) in the fixed frame, each grown by `margin` on every side.
+    `sensor_pose` is the scan's (x, y, yaw) in the same frame. SLAM given this scan neither marks
+    nor clears anything where moving objects are, so they leave no trail in the map.
+    """
+    r = np.array(ranges, dtype=np.float64)
+    if not len(boxes) or not len(r):
+        return r
+    sx, sy, syaw = sensor_pose
+    a = syaw + angle_min + angle_increment * np.arange(len(r))
+    ok = np.isfinite(r)
+    d = np.where(ok, r, 0.0)
+    px, py = sx + d * np.cos(a), sy + d * np.sin(a)
+    inside = np.zeros(len(r), bool)
+    for x, y, yaw, length, width in boxes:
+        c, s = math.cos(yaw), math.sin(yaw)
+        along, across = c * (px - x) + s * (py - y), -s * (px - x) + c * (py - y)
+        inside |= (np.abs(along) <= length / 2 + margin) & (np.abs(across) <= width / 2 + margin)
+    r[ok & inside] = np.nan
+    return r
 
 
 def boxes_to_frame(boxes, tx, ty, yaw):

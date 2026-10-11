@@ -1,7 +1,9 @@
 # ROS 1 Noetic move_base / TurtleBot3 Waffle in the Unity simulation. Loaded into the move_base
 # node's namespace; /use_sim_time is set by the launch file.
-# Global planner NavfnROS, local planner DWAPlannerROS. Tune robot_radius (0.22 m estimate)
-# against the actual robot before changing platforms; test/check_obstacle_costmap.py uses it.
+# Global planner NavfnROS, local planner DWAPlannerROS. robot_radius 0.25 m covers the Unity
+# TurtleBot3 Waffle's colliders (UnityProject/Assets/turtlebot3/model.urdf): the body box sits
+# 0.064 m behind base_link, so its rear corners are 0.238 m from the turning centre. Re-measure
+# before changing platforms; cmd_vel_guard, teleop_assist and the tests use the same value.
 # 0.5 s expected_update_rate is a maximum scan interval in simulation time, not Hz.
 # The collision-monitor stop lives in cmd_vel_guard (launch file), not here.
 # With perception, move_base_predicted.yaml adds tracked obstacles' predicted paths to the local
@@ -29,12 +31,15 @@ conservative_reset:
   reset_distance: 3.0           # clear outside a 3 m square around the robot
   layer_names: [obstacle_layer]
 aggressive_reset:
-  reset_distance: 0.92          # 4 x robot_radius, move_base's default for this step
+  reset_distance: 1.0           # 4 x robot_radius, move_base's default for this step
   layer_names: [obstacle_layer]
 
 NavfnROS:
   allow_unknown: true
-  default_tolerance: 0.5
+  # Plan to the goal itself or not at all. With a tolerance, a goal too close to an obstacle (or
+  # one an obstacle later covers) was silently replaced by the nearest free point up to 0.5 m
+  # away, and move_base then reported that point as reached.
+  default_tolerance: 0.0
   use_dijkstra: true            # Dijkstra rather than A*
   visualize_potential: false
 
@@ -50,10 +55,17 @@ DWAPlannerROS:
   min_vel_y: 0.0
   max_vel_theta: 0.5
   min_vel_theta: 0.2
-  acc_lim_x: 0.5
+  # DWA samples only velocities reachable within one 0.1 s cycle at these limits. 2.5 m/s^2 lets
+  # every cycle pick any speed up to max_vel_x; Unity's wheel drives ramp physically. At 0.5, a
+  # robot that had slowed near an obstacle could sample at most 0.05 m/s: trajectories 0.1 m
+  # long, so it crawled or turned on the spot instead of driving round.
+  acc_lim_x: 2.5
   acc_lim_y: 0.0
-  acc_lim_trans: 0.5
-  # At 10 Hz, sample up to 0.25 rad/s from rest so a 0.2 rad/s turn is reachable.
+  acc_lim_trans: 2.5
+  # At 10 Hz, sample up to 0.25 rad/s from rest so a 0.2 rad/s turn is reachable. An in-place
+  # turn cannot reverse within one cycle (|w| >= min_vel_theta), so a global path that switches
+  # sides makes the robot turn the long way round; the global costmap's 6 m range prevents that.
+  # 4.0 or more allows the reversal but makes DWA dither in front of narrow gaps.
   acc_lim_theta: 2.5
   trans_stopped_vel: 0.02
   theta_stopped_vel: 0.02
@@ -74,7 +86,8 @@ DWAPlannerROS:
   goal_distance_bias: 24.0      # DWB GoalDist / GoalAlign scale
   # Keep away from obstacles. At 0.02 DWA hugged the path within 0.25 m of thin objects (posts
   # the scan only marks from close up); once the footprint touches one, no trajectory is valid
-  # and the goal fails. 0.1 keeps ~0.45 m in the Unity warehouse.
+  # and the goal fails. 0.1 keeps ~0.45 m in the Unity warehouse. With the local inflation
+  # below, this cost only applies within 0.30 m of body clearance, closer than Navfn's path.
   occdist_scale: 0.1
   forward_point_distance: 0.1
   stop_time_buffer: 0.2
@@ -112,7 +125,7 @@ global_costmap:
   publish_frequency: 2.0
   transform_tolerance: 0.3
   resolution: 0.05
-  robot_radius: 0.22
+  robot_radius: 0.25
   track_unknown_space: true
   always_send_full_costmap: true
   plugins:
@@ -125,10 +138,16 @@ global_costmap:
   obstacle_layer:
     footprint_clearing_enabled: true
     observation_sources: scan
-    scan: *scan_source
+    # Mark further out than the local costmap, so Navfn sees the whole of a shelf row before it
+    # picks a side. At 3 m the far end of a long rack was unmarked: the path went round it,
+    # then switched sides as the robot came closer, and DWA turned the robot around.
+    scan:
+      <<: *scan_source
+      obstacle_range: 6.0
+      raytrace_range: 7.0
   inflation_layer:
     cost_scaling_factor: 3.0
-    inflation_radius: 0.55
+    inflation_radius: 0.60        # Navfn's path keeps ~0.35 m of body clearance (see below)
 
 local_costmap:
   global_frame: odom
@@ -140,7 +159,7 @@ local_costmap:
   width: 6
   height: 6
   resolution: 0.05
-  robot_radius: 0.22
+  robot_radius: 0.25
   always_send_full_costmap: true
   plugins:
     - {name: obstacle_layer, type: "costmap_2d::ObstacleLayer"}
@@ -149,6 +168,11 @@ local_costmap:
     footprint_clearing_enabled: true
     observation_sources: scan
     scan: *scan_source
+  # DWA reads the cost under the footprint's outline, not its centre, so this inflation counts
+  # from the robot's edge: cost falls to zero at 0.30 m of body clearance. Navfn's path (global
+  # inflation 0.60 m from the centre) keeps about 0.35 m, so following it costs nothing. At
+  # 0.55 m here, the path itself lay in high cost; DWA preferred short, slow trajectories
+  # near shelves and corners and ended up turning on the spot.
   inflation_layer:
     cost_scaling_factor: 3.0
-    inflation_radius: 0.55
+    inflation_radius: 0.30

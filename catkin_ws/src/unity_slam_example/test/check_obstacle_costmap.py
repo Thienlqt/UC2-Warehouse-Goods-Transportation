@@ -29,7 +29,7 @@ from uc2_vision_msgs.msg import (Detection3D, Detection3DArray,  # noqa: E402
 # Obstacle wall x in metres: the centre of a 5 cm costmap cell, not a cell
 # boundary, so float rounding cannot mark the neighbouring cell instead.
 OBSTACLE_X = 1.025
-ROBOT_RADIUS = 0.22  # Must match robot_radius in config/move_base.yaml.
+ROBOT_RADIUS = 0.25  # Must match robot_radius in config/move_base.yaml.
 # A tracked 0.4 m box at (MOVER_X, -1.0) moving +y at 0.5 m/s: its near edge sweeps along
 # x = MOVER_X - 0.2 (a cell centre) towards the robot's path, where the scan sees nothing.
 MOVER_X = 1.525

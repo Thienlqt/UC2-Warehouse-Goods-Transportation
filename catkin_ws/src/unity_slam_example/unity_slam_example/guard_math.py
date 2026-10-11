@@ -36,15 +36,15 @@ def safe_time(points, v, w, radius, horizon, step, min_points, movers=()):
     by slowing down, and counting them would also block turning or backing away.
 
     `movers` are tracked boxes moving at constant velocity. One box entering the footprint is a
-    contact, but only when the robot's own motion causes it: once a box would reach a
-    stationary robot too, stopping cannot avoid it, so it is ignored from then on. Boxes
-    already touching the footprint are ignored, as are points.
+    contact. A box that would reach a stationary robot too cannot be avoided by stopping, so it
+    only counts while the commanded motion brings the robot closer to it than standing still
+    would: turning and backing away stay allowed, driving into its way does not. The same
+    applies to boxes already touching the footprint.
     """
     pts = np.asarray(points, dtype=float).reshape(-1, 2)
     pts = pts[np.hypot(pts[:, 0], pts[:, 1]) > radius]
     if len(pts) < min_points:
         pts = pts[:0]
-    movers = [m for m in movers if rect_distance(0.0, 0.0, m) > radius]
     if not len(pts) and not movers:
         return None
     for k in range(1, int(round(horizon / step)) + 1):
@@ -53,11 +53,13 @@ def safe_time(points, v, w, radius, horizon, step, min_points, movers=()):
         if len(pts) and np.count_nonzero(
                 np.hypot(pts[:, 0] - x, pts[:, 1] - y) <= radius) >= min_points:
             return (k - 1) * step
-        for m in list(movers):
+        for m in movers:
             ahead = advance(m, t)
-            if rect_distance(0.0, 0.0, ahead) <= radius:
-                movers.remove(m)            # reaches the robot even if it stops: ignore it
-            elif rect_distance(x, y, ahead) <= radius:
+            moving = rect_distance(x, y, ahead)
+            if moving > radius:
+                continue
+            standing = rect_distance(0.0, 0.0, ahead)
+            if standing > radius or moving < standing - 0.01:
                 return (k - 1) * step
     return None
 

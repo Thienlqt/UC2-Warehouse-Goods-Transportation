@@ -17,6 +17,9 @@ lidar_obstacles:
   motion_margin: 0.15         # a beam must pass this far beyond an old point to count it free (m)
   motion_min_evidence: 3      # points needed for a moving or static verdict
   motion_moved_fraction: 0.25 # share of the evidence points that must be free to call it moving
+  # /scan_static (slam_toolbox's input) drops returns within this distance of a moving track's box,
+  # so moving obstacles leave no trail in the map.
+  static_scan_margin: 0.1     # (m)
 
 camera_detector:
   # Defaults: models/detector.onnx and models/classes.txt installed with this package.

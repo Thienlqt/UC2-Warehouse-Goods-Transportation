@@ -20,7 +20,7 @@ from .predicted_obstacles import MovingTracks
 class CmdVelGuard:
     def __init__(self):
         self.base_frame = rospy.get_param('~base_frame', 'base_link')
-        self.radius = rospy.get_param('~robot_radius', 0.22)
+        self.radius = rospy.get_param('~robot_radius', 0.25)
         self.horizon = rospy.get_param('~time_before_collision', 1.2)
         self.step = rospy.get_param('~simulation_time_step', 0.1)
         self.min_points = rospy.get_param('~min_points', 6)

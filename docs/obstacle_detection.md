@@ -11,6 +11,7 @@ Unity camera --JPEG 30 Hz--> camera_detector (YOLOv8n, ONNX Runtime) --> /detect
                                          \--> /detections_image (boxes + "person 0.91")
 Unity lidar  --/scan 10 Hz--> lidar_obstacles (segments -> L-shape boxes -> Kalman tracks)
                                          \--> /obstacles_lidar (class "obstacle")
+                                         \--> /scan_static (scan minus moving tracks) --> slam_toolbox
 /detections_2d + /obstacles_lidar + TF + camera_info --> obstacle_fusion
                                          \--> /obstacles (named, scored 3D boxes)
                                          \--> /obstacles_markers (RViz boxes + labels)
@@ -28,7 +29,7 @@ lacks.
 | LiDAR segmentation | Adaptive breakpoint detection (Borges & Aldon) | Splits objects with a range-dependent gap threshold, robust as points spread out with distance |
 | LiDAR boxes | L-shape fitting (Zhang et al. 2017), with a least-squares refinement | Oriented rectangle even when only one or two faces are visible |
 | Tracking | Constant-velocity Kalman filter + Hungarian matching, in `odom` | Stable IDs and velocities; robot motion is not mistaken for object motion |
-| Motion check | A track counts as moving only when a later scan sees free space where its points were 0.4–1 s earlier | A box's centre drifts as its faces come into view or segments split and merge, so the Kalman velocity alone calls static boxes moving |
+| Motion check | A track counts as moving only when the scan shows it moved through space: a later scan sees free space where its points were 0.4–1 s earlier, or its points now lie where a scan 0.4–1 s earlier saw free space | A box's centre drifts as its faces come into view or segments split and merge, so the Kalman velocity alone calls static boxes moving. A static surface can do neither. The second test catches a box coming straight at the robot, which hides the points it left |
 | Fusion | Late fusion: project lidar boxes into the image, match by horizontal (bearing) IoU | A 2D scan has no height, so only the horizontal extent is compared |
 
 Confidence scores:
@@ -147,12 +148,11 @@ cd catkin_ws/src/unity_slam_example && python3 -m pytest -q test/
 
 ## Limits
 
-- The 2D lidar sees only its scan plane (~0.13 m above the base). Anything entirely above or below
-  it is invisible to the lidar and gets no 3D box; the camera may still detect it in 2D.
+- The 2D lidar sees only its scan plane (0.132 m above the floor). Anything entirely above or
+  below it is invisible to the lidar and gets no 3D box; the camera may still detect it in 2D.
+  The robot's body is 0.01–0.10 m high, so an obstacle lower than the scan plane (a pallet edge,
+  a rack's bottom beam) can hit the robot without any avoidance layer seeing it.
 - Box height is not measured; 3D boxes use a fixed 0.5 m height for display.
-- An object coming straight at the lidar hides the points it left, so the motion check sees no
-  free space and reports it as static (velocity 0) until it also moves sideways. The scan and
-  `cmd_vel_guard` still stop the robot for it.
 - The warehouse model has no `person` class yet; pedestrians and a retrain are the next milestone.
 - It is trained only on this warehouse's rendered assets. Validation frames come from new layouts of
   the same assets, so the scores measure this simulation, not real cameras or other warehouses.

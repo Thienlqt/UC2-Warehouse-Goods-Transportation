@@ -47,7 +47,7 @@ bash scripts/run_ros.sh           # Ubuntu / WSL: native, RViz opens as a window
 DWAPlannerROS local planner), `cmd_vel_guard` and, with perception, `predicted_obstacles`. The
 costmaps wait for TF indefinitely, so ROS can start before you press Play. Commands flow
 move_base → `/cmd_vel_nav` → `cmd_vel_guard` → `/cmd_vel` (Unity). The guard is a last-resort
-stop: it rolls the command forward and slows it if the robot's circle (0.22 m) would touch at
+stop: it rolls the command forward and slows it if the robot's circle (0.25 m) would touch at
 least 6 scan points, or one moving tracked obstacle, within 1.2 s, down to zero at contact
 within 0.1 s. It also sends zero velocity while `/scan` is older than 1 s. Its parameters are in
 the launch file.
@@ -77,14 +77,16 @@ results: re-tune them with the tests below and record the values you settle on.
 |---|---:|---|
 | Scan | 360 rays, 10 Hz | One-degree sampling over 0–359 degrees |
 | Local costmap | 6 × 6 m, 5 cm cells, 10 Hz | Nearby obstacles around the robot |
-| Obstacle marking range (`obstacle_range`) | 3 m | Insert observed obstacles |
-| Ray clearing range (`raytrace_range`) | 4 m | Clear previously observed obstacles when scans show free space |
-| Inflation radius | 0.55 m | Penalize paths near obstacles; not a guaranteed clearance |
-| Robot radius | 0.22 m | Inherited circular approximation; verify it covers the robot (also in `cmd_vel_guard`) |
+| Obstacle marking range (`obstacle_range`) | 3 m local, 6 m global | Insert observed obstacles; the global costmap sees a whole shelf row before Navfn picks a side |
+| Ray clearing range (`raytrace_range`) | 4 m local, 7 m global | Clear previously observed obstacles when scans show free space |
+| Inflation radius | 0.60 m global, 0.30 m local | Global: Navfn keeps its path about 0.35 m from obstacles. Local: DWA's obstacle cost (measured from the robot's edge) only starts closer than that. Not a guaranteed clearance |
+| Robot radius | 0.25 m | Covers the Unity robot's colliders, including the rear corners 0.238 m from the turning centre (also in `cmd_vel_guard` and `teleop_assist`) |
+| Goal tolerance (`NavfnROS/default_tolerance`) | 0 m | Plan to the clicked goal or fail; never substitute a nearby point |
 | Maximum forward speed | 0.2 m/s | Initial simulation test speed |
 | Maximum turn rate | 0.5 rad/s | Matches the Unity controller limit |
 | Minimum translating speed (`min_vel_trans`) | 0.03 m/s | Reject barely moving candidates unless they have a useful turn rate |
 | Minimum turn rate (`min_vel_theta`) | 0.2 rad/s | With a positive translating minimum, reject weak in-place turns |
+| Acceleration (`acc_lim_x`, `acc_lim_trans`) | 2.5 m/s² | Every 10 Hz cycle can sample any speed up to the maximum; Unity's wheels ramp physically |
 | Turn acceleration (`acc_lim_theta`) | 2.5 rad/s² | Make the minimum turn rate reachable from rest in the 10 Hz dynamic window |
 | DWA prediction horizon (`sim_time`) | 2 s | Evaluate candidate motion against current obstacles |
 | Scoring (`path_distance_bias`, `goal_distance_bias`, `occdist_scale`) | 32, 24, 0.1 | Follow the path vs. head for the goal vs. keep away from obstacles |
@@ -102,6 +104,44 @@ editing these settings.
 such as posts. The scan marks those only from close up, and once the robot's footprint touches
 a lethal cell every trajectory is invalid, so the goal fails. At 0.1 the robot keeps about
 0.45 m from obstacles in the Unity warehouse.
+
+### Why the robot hit shelves and changed its destination
+
+- **The robot was bigger than ROS thought.** Every node modelled it as a 0.22 m circle around
+  `base_link`, but the Unity Waffle's body box sits 0.064 m behind it: its rear corners are
+  0.238 m out. Turning on the spot next to a shelf, a corner could swing into it, and the guard
+  never limits a turn on the spot (a circle does not sweep when it turns). `robot_radius` is now
+  0.25 m everywhere, and the global inflation 0.60 m so that Navfn's path keeps its clearance.
+- **Navfn replaced unreachable goals.** With `default_tolerance: 0.5`, a goal within reach of an
+  obstacle (clicked next to a shelf, or covered later by a newly seen obstacle) was quietly
+  replaced by the nearest free point up to 0.5 m away. Navfn picked that point again at every
+  1 Hz replan, so the robot drove to a spot you did not choose and turned there until move_base
+  gave up (`test/scenarios.py goal_at_box`: 0.47 m from the goal, over 1500° of turning, then
+  "the robot appears to be oscillating"). Now Navfn plans to the goal itself or fails: put
+  goals at least 0.25 m from obstacles, or move_base stops and logs "Failed to get a plan".
+
+### Why the robot used to turn on the spot near shelves
+
+With a goal behind a shelf, the robot drove to within 1–3 m of it, then stopped and turned on
+the spot, sometimes several full turns, before it drove round. `test/scenarios.py rack_end`
+reproduces this with the real move_base. Three settings combined:
+
+- **The local inflation counted twice.** DWA scores a trajectory by the highest cost under the
+  footprint's *outline*, but the inflation layer already measures from the robot's centre. With
+  0.55 m local inflation, any body clearance under 0.55 m was costly, including the 0.33 m that
+  Navfn's path kept. A short, slow trajectory reaches less of that cost, so DWA slowed down
+  next to shelves and corners. Local inflation is now 0.30 m: following the path costs nothing,
+  and DWA still keeps away from anything closer.
+- **The dynamic window was too narrow to recover.** DWA only samples velocities reachable within
+  one 0.1 s cycle. At 0.5 m/s², a robot that had slowed to a crawl could sample at most
+  0.05 m/s, so turning on the spot always looked better. `acc_lim_x` is now 2.5 m/s², so every
+  cycle can pick any speed. Unity's wheel drives still ramp physically.
+- **The far end of a shelf was not in the global costmap.** Scans marked obstacles only within
+  3 m, so Navfn first routed round the end it could see, then switched sides as more of the
+  shelf appeared. A robot already turning on the spot cannot reverse the turn within one cycle
+  (the minimum in-place rate is 0.2 rad/s), so it turned the long way round, up to several full
+  turns. The global costmap now marks up to 6 m, so the path no longer switches. A larger
+  `acc_lim_theta` would allow the reversal but makes DWA dither in front of narrow gaps.
 
 Recovery clears the scan obstacles (`obstacle_layer`) and replans. move_base's default list also
 spins the robot twice on the spot (`rotate_recovery`). With a 360 degree lidar a spin shows
@@ -128,8 +168,9 @@ scene already overrides the Unity TF publisher to start at `odom`.
 With perception on, `predicted_obstacles` reads the fused tracks on `/obstacles` (box, class,
 score, velocity in `odom`). A track's velocity is zero until the scan confirms that it moves
 ([obstacle_detection.md](obstacle_detection.md)): driving past a static box no longer makes it
-look like it is moving, so its predicted path no longer blocks the robot's own route. Ten times a second, it publishes `/obstacles_predicted`: a 6 × 6 m,
-5 cm grid around the robot.
+look like it is moving, so its predicted path no longer blocks the robot's own route. A box
+coming straight at the robot (or from behind) is confirmed too, within about 0.5 s. Ten times a
+second, it publishes `/obstacles_predicted`: a 6 × 6 m, 5 cm grid around the robot.
 - Each confident moving track (score ≥ 0.3, speed ≥ 0.15 m/s) sweeps its box outline along its
   velocity for 2 s. The swept cells are lethal.
 - A class listed under `padding` gets that much extra clearance. It is marked even when it stands
@@ -147,8 +188,20 @@ along the existing path.
 
 `cmd_vel_guard` also subscribes to `/obstacles`. It moves each confident moving track forward in
 time alongside the simulated robot motion, and slows or stops when the box would enter the
-robot's circle. A track that would reach the robot even if it stopped is ignored, because braking
-cannot avoid it and would only freeze the robot in its way.
+robot's circle. A track that would reach the robot even if it stopped cannot be avoided by
+braking, so it only counts while the command brings the robot closer to it than standing still:
+turning and backing away stay allowed, driving on into its way does not. Before, such a track
+was ignored, and DWA (which does not see predictions within `keep_out`) could drive straight
+into a box crossing just ahead.
+
+With perception, slam_toolbox maps `/scan_static` instead of `/scan`: `lidar_obstacles` blanks
+the returns within 0.1 m (`static_scan_margin`) of each moving track. Otherwise a box driving
+past the robot leaves a trail of occupied cells in `/map`, the global costmap's static layer
+keeps them, and Navfn routes round a wall that is not there (`test/scenarios.py headon` with
+slam_toolbox: 12 such cells in the middle of the aisle with `/scan`, at most 1 with
+`/scan_static`). A box is still mapped while it stands still and in the 0.5 s before its track is
+confirmed as moving. Scans that later see through that space can clear those cells, but
+slam_toolbox needs many of them to outweigh a few hits. The costmaps always use the raw `/scan`.
 
 Tune `predicted_obstacles` in `config/perception.yaml`:
 
@@ -166,7 +219,11 @@ in the launch file; keep them equal.
 
 Limits:
 - Constant velocity only. A track that turns or stops is re-predicted at the next scan (10 Hz),
-  not anticipated.
+  not anticipated. A box that turns back towards a robot already crossing its path can still
+  reach it: DWA does not reverse (`min_vel_x: 0`) and the guard only stops it driving further in.
+  `test/scenarios.py sweeper` shows this with a box sweeping back and forth across an aisle.
+- The robot does not get out of the way of something faster coming from behind (`overtaken`).
+  It is ignored by the guard (braking cannot help) and DWA only plans forward.
 - A track needs two scans to be confirmed, and its velocity settles over a few more. A fast
   object appearing at close range is handled by the scan and the guard first.
 - Only what the 2D lidar sees gets a track. The camera adds labels, not new obstacles.
@@ -255,6 +312,30 @@ Make changes during Play mode for temporary tests, or save a separate test scene
 | Blocked passage | Block the full corridor | Robot stops, runs its recovery behaviours, then reports failure rather than driving through |
 | Removed obstacle | Move the object out of the laser's view after blocking the path | Local obstacle cells clear when free-space rays cross them |
 
+### Moving boxes in Unity
+
+Any scene with the robot gets a `MovingObstacleSpawner` in Play mode (bottom-right help line).
+With the Game view focused:
+
+| Key | Spawns |
+|---|---|
+| **M** | A box crossing the robot's path 3 m ahead at 0.4 m/s, entering from the side with more room |
+| **N** | A box coming straight at the robot from up to 6 m ahead at 0.3 m/s, turning back 0.6 m short of where the robot was |
+| **K** | Removes the spawned boxes |
+
+Each box is 0.5 × 0.6 × 0.5 m (it crosses the lidar plane), looks like the warehouse cartons
+(so the camera labels it `box`), and goes back and forth over the free floor it finds, pausing
+1 s at each end. It is kinematic: it pushes the robot rather than the other way round, so any
+contact in Unity is a real avoidance failure. Speeds, distances and keys are on the spawner
+(select `MovingObstacleSpawner` in the Hierarchy during Play). For a fixed set-up, add a
+`MovingObstacle` component (with a `Rigidbody` and collider) to any object in a test scene: it
+travels `Travel` metres along `Direction` and back at `Speed`.
+
+Try it: send a 2D Nav Goal 6–8 m ahead in an open area, then press **M** or **N** while the
+robot drives. RViz should show the box's track (**Obstacles (fused)**) and a band ahead of it
+(**Predicted Obstacles**); the robot should wait for a crossing box or steer round an oncoming
+one. Driving by hand (**P**, hold **W**) works the same way.
+
 Start moving-obstacle trials slowly. Prediction assumes constant velocity (see
 [Moving and labelled obstacles](#moving-and-labelled-obstacles)), and 2D lidar only
 detects geometry intersecting the scan plane. Repeat each trial with `perception:=false`
@@ -323,8 +404,48 @@ cd src/unity_slam_example
 python3 -m pytest -q test/ && python3 test/check_obstacle_costmap.py'
 ```
 
-Expect eight `PASS:` lines. The sixth reports how far the robot stopped from the wall, the last
-how close the body came to the box.
+Expect fourteen `PASS:` lines. The twelfth reports how far the robot stopped from the wall, the
+last how close the body came to the box.
+
+### Scenario trials
+
+`test/scenarios.py` runs whole navigation goals against the same real nodes plus
+`lidar_obstacles` and `obstacle_fusion`, with a simulated robot (0.3 s motor lag, 1 cm range
+noise) and boxes, some of them moving. Each trial publishes its own `/clock`, so a busy machine
+slows it down without changing the result. Run it after the checks above, from
+`catkin_ws/src/unity_slam_example` (all scenes once take about 20 minutes on 6 cores):
+
+```bash
+python3 test/scenarios.py                       # every scene once
+python3 test/scenarios.py rack_end cross --runs 3
+```
+
+Results, 3 trials per scene, October 2026. Time is to the goal (or to giving up); *stopped*
+includes the final turn to the goal heading (2–3 s); clearance is the closest the robot's
+colliders came to a box (0: contact); *off goal* is where it ended (goal tolerance 0.25 m).
+
+| Scene | What | Reached | Time | Stopped | Clearance | Off goal |
+|---|---|---|---|---|---|---|
+| `rack_end` | Goal behind a rack with uprights in front | 3/3 | 42 s | 4 s | 0.46 m | 0.21 m |
+| `shelf_end` | Goal behind a deep shelf | 3/3 | 41 s | 4 s | 0.46 m | 0.21 m |
+| `open_box` | Box on the route | 3/3 | 39 s | 2 s | 0.49 m | 0.20 m |
+| `goal_at_box` | Goal 0.15 m in front of a box | 0/3, as intended | 15 s | 15 s | — | does not move |
+| `post` | 5 cm post beside the route | 3/3 | 38 s | 2 s | 0.51 m | 0.20 m |
+| `aisle_narrow` | Box in a 2.4 m aisle | 3/3 | 39 s | 2 s | 0.42 m | 0.20 m |
+| `aisle_tight` | 0.70 m gaps either side of a box | 2/3 | up to 100 s | up to 62 s | 0.14 m | — |
+| `cross` | Box crossing at 0.4 m/s | 3/3 | 42 s | 0 s | 1.24 m | 0.21 m |
+| `cross_fast` | Box crossing at 0.8 m/s | 3/3 | 44 s | 2 s | 0.41 m | 0.20 m |
+| `headon` | Box coming head-on in a 3 m aisle | 3/3 | 45 s | 2 s | 0.12 m | 0.20 m |
+| `overtaken` | Faster box from behind (known limit) | 3/3 | 55 s | 10 s | 0 (contact) | 0.20 m |
+| `sweeper` | Box sweeping across the aisle (known limit) | 3/3 | 73 s | 17 s | 0 (contact) | 0.21 m |
+
+Compared with the previous commit: `rack_end` failed 1 trial in 3 and stalled for up to 74 s
+with up to 1537° of turning on the spot; `cross_fast` ended in contact in 2 of 3 trials;
+`goal_at_box` drove to a point 0.47 m from the goal and turned there for a minute until
+move_base aborted. `aisle_tight` is a stress test: the 0.25 m robot circle leaves 0.10 m either
+side, and the robot can still hesitate there, turning on the spot while Navfn chooses between
+the two gaps. `overtaken` and `sweeper` are the limits listed under
+[Moving and labelled obstacles](#moving-and-labelled-obstacles).
 
 References: [costmap_2d obstacle layer (ROS wiki)](https://wiki.ros.org/costmap_2d/hydro/obstacles),
 [dwa_local_planner](https://wiki.ros.org/dwa_local_planner) and

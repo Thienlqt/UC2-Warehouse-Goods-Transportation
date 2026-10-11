@@ -20,6 +20,9 @@
 
   <node pkg="slam_toolbox" type="async_slam_toolbox_node" name="slam_toolbox" output="screen">
     <rosparam command="load" file="$(find unity_slam_example)/config/slam_toolbox.yaml"/>
+    <!-- With perception, map the scan without moving tracks (lidar_obstacles), so a moving box
+         leaves no trail in /map that would block the global planner. -->
+    <param name="scan_topic" value="/scan_static" if="$(arg perception)"/>
   </node>
 
   <!-- move_base -> /cmd_vel_nav -> cmd_vel_guard -> /cmd_vel (Unity AGVController). -->
@@ -31,7 +34,7 @@
     <remap from="cmd_vel" to="cmd_vel_nav"/>
   </node>
   <node pkg="unity_slam_example" type="cmd_vel_guard" name="cmd_vel_guard" output="screen">
-    <param name="robot_radius" value="0.22"/>  <!-- keep equal to the costmaps' robot_radius -->
+    <param name="robot_radius" value="0.25"/>  <!-- keep equal to the costmaps' robot_radius -->
     <param name="time_before_collision" value="1.2"/>
     <param name="simulation_time_step" value="0.1"/>
     <param name="min_points" value="6"/>
@@ -44,7 +47,7 @@
   <!-- Assisted keyboard driving (Unity first-person drive, P): /cmd_vel_teleop -> /cmd_vel_nav.
        Holding W keeps the heading and steers around obstacles within lookahead metres. -->
   <node pkg="unity_slam_example" type="teleop_assist" name="teleop_assist" output="screen">
-    <param name="robot_radius" value="0.22"/>  <!-- keep equal to the costmaps' robot_radius -->
+    <param name="robot_radius" value="0.25"/>  <!-- keep equal to the costmaps' robot_radius -->
     <param name="margin" value="0.2"/>         <!-- extra clearance each side of the body (m) -->
     <param name="lookahead" value="10.0"/>     <!-- react to obstacles this far ahead (m) -->
     <param name="max_turn" value="0.5"/>       <!-- rad/s, the Unity controller limit -->
@@ -65,7 +68,9 @@
 
   <group if="$(arg perception)">
     <rosparam command="load" file="$(find unity_slam_example)/config/perception.yaml"/>
-    <node pkg="unity_slam_example" type="lidar_obstacles" name="lidar_obstacles" output="screen"/>
+    <!-- respawn: slam_toolbox maps its /scan_static. -->
+    <node pkg="unity_slam_example" type="lidar_obstacles" name="lidar_obstacles" output="screen"
+          respawn="true"/>
     <node pkg="unity_slam_example" type="camera_detector" name="camera_detector" output="screen"/>
     <node pkg="unity_slam_example" type="obstacle_fusion" name="obstacle_fusion" output="screen"/>
     <!-- respawn: the local costmap keeps the last grid it received. -->
