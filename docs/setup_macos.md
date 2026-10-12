@@ -46,6 +46,8 @@ Check **Robotics → ROS Settings**: Protocol **ROS1**, ROS IP Address **127.0.0
 2. Open <http://localhost:6080/vnc.html?password=ubuntu&autoconnect=true> (password `ubuntu`).
 3. In Unity, press **Play**. RViz shows the map growing, the laser scan and the camera detections.
 4. In RViz, use **2D Nav Goal** to send the robot somewhere in known free space.
+   For queued pickup/dropoff/home tasks, use the Unity delivery panel as described in
+   [delivery_requests.md](delivery_requests.md).
 5. **After stopping Play, restart the ROS side before the next Play:**
    `docker stop unity-nav2`, then `bash docker/start-navigation.sh` again.
 

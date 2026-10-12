@@ -6,7 +6,9 @@ set -euo pipefail
 
 repo="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 container_name="${1:-unity-nav2}"
-image_name="${IMAGE:-unity-robotics:noetic}"
+# Use the canonical local image name: recent Docker Desktop versions may list the short tag
+# but fail `docker image inspect` on it, while the fully qualified name resolves correctly.
+image_name="${IMAGE:-docker.io/library/unity-robotics:noetic}"
 ws=/home/ubuntu/catkin_ws
 
 if docker container inspect "$container_name" >/dev/null 2>&1; then

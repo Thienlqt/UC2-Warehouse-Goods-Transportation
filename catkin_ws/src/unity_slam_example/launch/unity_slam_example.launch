@@ -30,6 +30,12 @@
               if="$(arg perception)"/>
     <remap from="cmd_vel" to="cmd_vel_nav"/>
   </node>
+  <!-- FIFO delivery requests use move_base's action result before advancing to the next stop. -->
+  <node pkg="unity_slam_example" type="delivery_controller" name="delivery_controller"
+        output="screen">
+    <param name="max_pending" value="50"/>
+    <param name="goal_timeout" value="300.0"/>
+  </node>
   <node pkg="unity_slam_example" type="cmd_vel_guard" name="cmd_vel_guard" output="screen">
     <param name="robot_radius" value="0.22"/>  <!-- keep equal to the costmaps' robot_radius -->
     <param name="time_before_collision" value="1.2"/>

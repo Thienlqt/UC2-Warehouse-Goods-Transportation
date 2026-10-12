@@ -47,6 +47,7 @@ pressing Play again ([why](docs/troubleshooting.md#the-robot-ignores-goals)).
 | `catkin_ws/src/ROS-TCP-Endpoint/` | Unity's ROS-TCP-Endpoint v0.6.0, ROS 1 release (vendored, Apache-2.0; `python3` shebang) |
 | `scripts/` | Ubuntu / WSL: `setup_ubuntu.sh` (dependencies, once), `run_ros.sh` (build + launch) |
 | `docker/` | macOS: `Dockerfile` (dependencies only) and `start-navigation.sh` |
+| [docs/delivery_requests.md](docs/delivery_requests.md) | FIFO pickup/dropoff/home requests and `move_base` action integration |
 | `detection_training/` | Retrain the camera detector on frames captured in Unity |
 | `docs/` | Setup guides, [obstacle avoidance](docs/obstacle_avoidance.md), [obstacle detection](docs/obstacle_detection.md), [troubleshooting](docs/troubleshooting.md) |
 

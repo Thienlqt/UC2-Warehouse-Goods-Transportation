@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+"""FIFO delivery controller using the ROS 1 move_base action server."""
+
+from unity_slam_example.delivery_controller import main
+
+
+if __name__ == "__main__":
+    main()
