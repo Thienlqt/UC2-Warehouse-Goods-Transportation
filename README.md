@@ -7,8 +7,11 @@ A TurtleBot3 Waffle drives through a simulated warehouse in **Unity** while **RO
 obstacles, and detects objects with the robot's camera and 2D lidar (boxes, labels, confidence).
 Tracked obstacles are predicted 2 s ahead, so the robot yields to or steers around moving ones.
 Driving by hand (P, hold W), ROS keeps the heading and steers around obstacles within 10 m.
-To test against moving obstacles, press M (a box crossing ahead) or N (a box coming head-on) in
-Play mode ([how](docs/obstacle_avoidance.md#moving-boxes-in-unity)).
+To test against moving obstacles in Play mode, press T for traffic roaming the warehouse, M for
+something crossing ahead or N for something coming head-on. B switches between a box and warehouse
+traffic: a worker, a worker with a cart, a pallet jack, a forklift and an AMR. They are physical
+bodies that steer round each other and the robot and never pass through anything
+([how](docs/obstacle_avoidance.md#moving-boxes-in-unity)).
 
 ![RViz during path planning: the camera detections panel with YOLO boxes beside the SLAM map, costmap and the planned path to a 2D Nav Goal](docs/media/rviz_path_planning_demo.gif)
 
@@ -45,7 +48,7 @@ pressing Play again ([why](docs/troubleshooting.md#the-robot-ignores-goals)).
 
 | Path | What |
 |---|---|
-| `UnityProject/` | Unity project: warehouse scene, robot, lidar and camera sensors, detection overlay, first-person driving (**P**), moving test boxes (**M**/**N**), dataset capture tool |
+| `UnityProject/` | Unity project: warehouse scene, robot, lidar and camera sensors, detection overlay, first-person driving (**P**), moving test boxes and warehouse traffic (**B**/**T**/**M**/**N**), dataset capture tool |
 | `catkin_ws/src/unity_slam_example/` | ROS 1 package: launch file, move_base / SLAM / perception config, RViz config, `cmd_vel_guard`, perception nodes, tests and scenario trials, detector model (`models/`, AGPL-3.0) |
 | `catkin_ws/src/uc2_vision_msgs/` | Detection messages: the `vision_msgs` 4.x layout (string class ids), which Noetic's `vision_msgs` lacks (Apache-2.0) |
 | `catkin_ws/src/ROS-TCP-Endpoint/` | Unity's ROS-TCP-Endpoint v0.6.0, ROS 1 release (vendored, Apache-2.0; `python3` shebang) |

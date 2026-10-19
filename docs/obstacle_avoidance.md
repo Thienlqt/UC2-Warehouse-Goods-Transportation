@@ -317,22 +317,109 @@ Make changes during Play mode for temporary tests, or save a separate test scene
 Any scene with the robot gets a `MovingObstacleSpawner` in Play mode (bottom-right help line).
 With the Game view focused:
 
-| Key | Spawns |
+| Key | Does |
 |---|---|
-| **M** | A box crossing the robot's path 3 m ahead at 0.4 m/s, entering from the side with more room |
-| **N** | A box coming straight at the robot from up to 6 m ahead at 0.3 m/s, turning back 0.6 m short of where the robot was |
-| **K** | Removes the spawned boxes |
+| **B** | Picks what the other keys spawn: a box, worker, worker with cart, pallet jack, forklift or AMR in turn (shown on the help line) |
+| **T** | Spawns it 3–15 m from the robot, roaming the whole warehouse |
+| **M** | Spawns it crossing the robot's path 3 m ahead (a box at 0.4 m/s), entering from the side with more room, then going back and forth |
+| **N** | Spawns it coming straight at the robot from up to 6 m ahead (a box at 0.3 m/s), turning back with its front 0.35 m short of where the robot centre was |
+| **K** | Removes everything spawned |
 
-Each box is 0.5 × 0.6 × 0.5 m (it crosses the lidar plane), looks like the warehouse cartons
-(so the camera labels it `box`), and goes back and forth over the free floor it finds, pausing
-1 s at each end. It is kinematic: it pushes the robot rather than the other way round, so any
-contact in Unity is a real avoidance failure. Speeds, distances and keys are on the spawner
-(select `MovingObstacleSpawner` in the Hierarchy during Play). For a fixed set-up, add a
-`MovingObstacle` component (with a `Rigidbody` and collider) to any object in a test scene: it
-travels `Travel` metres along `Direction` and back at `Speed`.
+To start with traffic already roaming, set `TrafficOnStart` on the spawner (select
+`MovingObstacleSpawner` in the Hierarchy during Play). The spawner also holds speeds, distances,
+keys and `YieldToRobot` (below).
+
+A spawn spot must be clear of shelves and walls, and at least `SpawnClearance` (0.5 m) from the
+robot and every other mover. For a mover that turns on the spot, the whole turning circle must be
+clear. If no spot is free, the help line says so and nothing appears.
+
+The box is 0.5 × 0.6 × 0.5 m (it crosses the lidar plane) and looks like the warehouse cartons,
+so the camera labels it `box`.
+
+#### Warehouse traffic
+
+**B** also offers the traffic a warehouse robot meets. The prefabs are in
+`UnityProject/Assets/Resources/WarehouseMovers` (materials in `Assets/Materials/WarehouseMovers`),
+built from Unity primitives by `Assets/Editor/WarehouseMoverBuilder.cs`. To rebuild them after
+editing that script, use **Tools ▸ Warehouse Movers ▸ Rebuild Prefabs**. Each one is solid
+across the lidar plane (0.13 m above the floor).
+
+| Prefab | Size (w × l × h, m) | Mass | Speed | What the lidar sees |
+|---|---|---:|---:|---|
+| `Worker` | 0.6 × 0.3 × 1.8 | 80 kg | 1.0 m/s | Two legs, swinging as they walk; stops at random about twice a minute |
+| `WorkerWithCart` | 0.6 × 1.6 × 1.8 | 140 kg | 0.8 m/s | Cart deck (0.1–0.2 m), then the worker's legs |
+| `PalletJack` | 0.8 × 2.2 × 1.8 | 500 kg | 0.8 m/s | Loaded pallet, pump unit, operator's legs |
+| `Forklift` | 1.1 × 3.2 × 2.4 | 3500 kg | 1.2 m/s | Chassis, mast and forks at travel height carrying a loaded pallet |
+| `AMR` | 0.6 × 0.8 × 0.6 | 200 kg | 1.0 m/s | Its 0.28 m body carrying a tote |
+
+Everything spawned, the box included, is driven by `WarehouseMover`.
+
+**Where it goes.** In `Roam` mode (**T**), it drives to a random reachable spot at least
+`MinTrip` (8 m) away anywhere in the warehouse, pauses, then picks the next one. In `Route` mode
+(**M**, **N**, or a prefab placed in a scene), it visits `Route` in order, then goes back
+(`PingPong`), loops or stops. On the way back, vehicles with `ReverseOnReturn` reverse instead of
+turning round. Paths come from a NavMesh that `WarehouseNavigation` builds from the scene's
+colliders the first time each mover size needs one (well under a second for the warehouse). Each
+path keeps `NavRadius` clear of shelves and walls, so a forklift needs a wider aisle than a worker.
+
+**How it moves.** It accelerates and brakes (`Acceleration`), turns towards where it is going
+(`TurnRate`) and drives only while roughly facing that way: no crabbing sideways. It pauses
+`PauseSeconds` at each destination. Random stops (`StopsPerMinute`, `StopSeconds`) and roaming
+destinations repeat for the same `Seed`.
+
+**Physics.** The body is a real `Rigidbody`, not kinematic, with a real-world mass. It is driven
+by velocity changes and held upright at its height, with frictionless colliders. Shelves, walls,
+the robot and other movers block it the way the physics engine blocks any two bodies, so nothing
+passes through anything. It also means a 3.5 t forklift would shove a 2.6 kg Waffle, so movers
+try not to touch:
+- **Avoiding.** Movers of the same size steer round each other with Unity's crowd avoidance
+  (`AvoidancePriority`: others make way for a forklift first). The robot gets a `NavMeshObstacle`,
+  so they steer round it too.
+- **Keeping right.** For anything else in the lane ahead (a mover of another size, or the robot),
+  a mover keeps right, as warehouse traffic does, and passes with a berth that grows with its
+  length. If the NavMesh has no room on the right, it passes on the left. Two movers meeting
+  head-on therefore both pass on their right. Behind something going the same way, it follows and
+  keeps the gap.
+- **Braking.** It keeps `Gap` to whatever is ahead and never swings its body into something
+  alongside. If something is in front of it at contact, it stops pushing.
+- **Giving way.** Blocked for `Patience` seconds (an aisle too narrow to pass, say), it gives
+  way: a roaming mover goes somewhere else, a route mover turns back.
+
+Turn off `YieldToRobot` (on the spawner, or per mover) for traffic that only steers round the
+robot and does not brake for it. That traffic will run into a robot that does not get out of
+its way, and push it: a harder test of the robot's own avoidance.
+
+For a fixed set-up, drag a prefab into a test scene. Leave it on `Roam`, or set `Route` and add
+world points. Select it to see its route, current path and footprint. The older `MovingObstacle`
+component still moves any object back and forth, kinematically, ignoring everything in its way.
+
+These are harder than a box. Check them against the limits in
+[Moving and labelled obstacles](#moving-and-labelled-obstacles):
+- They are faster than the 0.3–0.8 m/s that `test/scenarios.py` covers, they change speed, turn
+  and stop. Prediction assumes constant velocity.
+- The camera detector knows only `box`, `shelf` and `station`. These obstacles reach ROS as lidar
+  tracks without a person or vehicle class, so the `person` padding in `perception.yaml` never
+  applies to the worker. Their cartons may still be labelled `box`. Labelling them needs a
+  retrained detector (`detection_training/`).
+- The loaded forklift is 3.2 m long, and `lidar_obstacles` drops segments longer than
+  `max_extent: 3.0` m as walls. Seen side-on, its chassis and forks usually split into separate
+  segments, but check that it gets a track.
+- A walking person shows the lidar two small leg segments that split and merge.
+
+`Assets/Scripts/Tests/PlayMode/WarehouseMoverTests.cs` (Test Runner, PlayMode; no ROS needed)
+checks each prefab:
+- The lidar plane sees it from every side.
+- It drives a route and comes back facing the right way.
+- On open floor it gets past a robot-sized body with at least 0.15 m to spare, without moving it.
+- In an aisle too narrow to pass, it stops at least 0.2 m short, without moving it.
+
+It also checks that pairs meeting head-on get past each other without overlapping. Finally, it
+runs five kinds roaming `SimpleWarehouseScene` around the idle robot for 90 s of simulation time:
+none may overlap another or the robot, the robot must not be pushed, and each must cover at
+least 15 m.
 
 Try it: send a 2D Nav Goal 6–8 m ahead in an open area, then press **M** or **N** while the
-robot drives. RViz should show the box's track (**Obstacles (fused)**) and a band ahead of it
+robot drives, or **T** a few times for roaming traffic. RViz should show the box's track (**Obstacles (fused)**) and a band ahead of it
 (**Predicted Obstacles**); the robot should wait for a crossing box or steer round an oncoming
 one. Driving by hand (**P**, hold **W**) works the same way.
 
