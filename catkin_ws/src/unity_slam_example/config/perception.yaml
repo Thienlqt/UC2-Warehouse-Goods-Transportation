@@ -44,6 +44,12 @@ predicted_obstacles:
   spacing: 0.025              # outline point spacing (m): half a costmap cell, so points on cell
                               # boundaries cannot skip a cell along an edge
   keep_out: 0.45              # drop predicted points this close to the robot centre (m)
+  # Lethal only where a track will be within lethal_horizon (s); further along its path the cost
+  # falls from graded_max to graded_min (of 100): DWA may cross there but prefers not to.
+  # 80 maps to costmap cost 203, below inscribed (253), so those cells never block a trajectory.
+  lethal_horizon: 0.8
+  graded_max: 80
+  graded_min: 30
   grid_size: 6.0              # grid side (m) around the robot: the local costmap's size
   resolution: 0.05            # the local costmap's resolution
   obstacle_timeout: 0.5       # publish an empty grid when /obstacles is older than this (s)

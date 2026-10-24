@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 from unity_slam_example.avoidance_math import (advance, box_outline, inverse_pose,
-                                               occupancy_grid, predicted_points, rect_distance,
-                                               Track, track_to_frame)
+                                               occupancy_grid, predicted_costs, predicted_points,
+                                               rect_distance, Track, track_to_frame)
 
 
 def box(x=0.0, y=0.0, vx=0.0, vy=0.0, yaw=0.0, length=0.4, width=0.4, label='obstacle',
@@ -91,3 +91,18 @@ def test_occupancy_grid_is_aligned_around_the_robot():
 def test_occupancy_grid_without_points_is_free():
     _, _, _, data = occupancy_grid(np.zeros((0, 2)), (0.0, 0.0))
     assert not data.any()
+
+
+def test_predicted_costs_lethal_near_then_graded():
+    mover = Track(2.0, 0.0, 0.0, 0.2, 0.2, 0.5, 0.0, 'obstacle', 1.0)
+    pts, vals = predicted_costs([mover], robot_xy=(-5.0, 0.0))
+    assert vals.max() == 100 and vals.min() == 30
+    assert set(vals[vals < 100]) <= set(range(30, 81))
+    front = pts[:, 0] > 2.0 + 0.5 * 0.8 + 0.1 + 1e-6       # past the box's front at t = 0.8 s
+    assert (vals[front] < 100).all()
+
+
+def test_occupancy_grid_keeps_maximum_value():
+    _, _, _, data = occupancy_grid([(0.01, 0.01), (0.02, 0.02), (1.01, 0.01)], (0.0, 0.0),
+                                   values=[40, 100, 40])
+    assert data.max() == 100 and 40 in data

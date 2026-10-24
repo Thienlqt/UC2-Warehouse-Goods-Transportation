@@ -1,7 +1,8 @@
 """ROS node: /obstacles tracks -> /obstacles_predicted (OccupancyGrid) for the local costmap.
 
-Marks where moving obstacles will be within `horizon` seconds (constant velocity), and pads
-classes that need extra clearance (see avoidance_math.predicted_points). The grid is a square
+Marks where moving obstacles will be within `horizon` seconds (constant velocity): lethal for
+the first `lethal_horizon` seconds, a falling cost after that. Pads classes that need extra
+clearance (see avoidance_math.predicted_costs). The grid is a square
 around the robot, published on a timer and stamped with the latest robot TF; a costmap
 StaticLayer replaces its copy on every message, so old predictions disappear exactly. While
 /obstacles is stale the grid is empty.
@@ -13,7 +14,7 @@ from std_msgs.msg import Header
 from tf2_ros import Buffer, TransformException, TransformListener
 from uc2_vision_msgs.msg import Detection3DArray
 
-from .avoidance_math import (advance, inverse_pose, occupancy_grid, predicted_points, speed,
+from .avoidance_math import (advance, inverse_pose, occupancy_grid, predicted_costs, speed,
                              Track, track_to_frame)
 from .perception.ros_utils import quaternion_to_yaw
 
@@ -77,6 +78,9 @@ class PredictedObstacles:
             'padding_by_class': rospy.get_param('~padding', {}),
             'spacing': rospy.get_param('~spacing', 0.025),
             'keep_out': rospy.get_param('~keep_out', 0.45),
+            'lethal_horizon': rospy.get_param('~lethal_horizon', 0.8),
+            'graded_max': rospy.get_param('~graded_max', 80),
+            'graded_min': rospy.get_param('~graded_min', 30),
         }
         self.size = rospy.get_param('~grid_size', 6.0)
         self.resolution = rospy.get_param('~resolution', 0.05)
@@ -107,8 +111,8 @@ class PredictedObstacles:
             if abs(age) <= self.timeout:    # far in the future: the sim clock restarted
                 tracks = [advance(t, age) for t in latest[2]]
         r = robot.transform.translation
-        points = predicted_points(tracks, robot_xy=(r.x, r.y), **self.args)
-        ox, oy, n, data = occupancy_grid(points, (r.x, r.y), self.size, self.resolution)
+        points, values = predicted_costs(tracks, robot_xy=(r.x, r.y), **self.args)
+        ox, oy, n, data = occupancy_grid(points, (r.x, r.y), self.size, self.resolution, values)
         grid = OccupancyGrid(header=Header(stamp=stamp, frame_id=frame))
         grid.info.map_load_time = stamp
         grid.info.resolution = self.resolution

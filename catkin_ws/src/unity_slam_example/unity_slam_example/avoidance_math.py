@@ -59,8 +59,21 @@ def predicted_points(tracks, horizon=2.0, step=0.2, min_speed=0.15, min_confiden
     the scan, so they only add points when their class has padding. Points within `keep_out` of
     the robot are dropped: lethal cells on the robot itself would invalidate every trajectory.
     """
+    return predicted_costs(tracks, horizon, step, min_speed, min_confidence, padding_by_class,
+                           spacing, robot_xy, keep_out, lethal_horizon=horizon)[0]
+
+
+def predicted_costs(tracks, horizon=2.0, step=0.2, min_speed=0.15, min_confidence=0.3,
+                    padding_by_class=None, spacing=0.025, robot_xy=(0.0, 0.0), keep_out=0.45,
+                    lethal_horizon=0.8, graded_max=80, graded_min=30):
+    """predicted_points with a value per point: 100 (lethal) up to `lethal_horizon` seconds ahead,
+    then falling from `graded_max` to `graded_min` at `horizon`.
+
+    A cart 2 s away along its path blocks the robot only if the robot is there then, which a
+    costmap cannot say; lethal cells there made DWA wait for carts still metres away.
+    """
     padding_by_class = padding_by_class or {}
-    chunks = []
+    chunks, values = [], []
     for track in tracks:
         if track.score < min_confidence:
             continue
@@ -73,15 +86,21 @@ def predicted_points(tracks, horizon=2.0, step=0.2, min_speed=0.15, min_confiden
             continue
         for t in times:
             chunks.append(box_outline(advance(track, t), padding, spacing))
+            graded = graded_max - (graded_max - graded_min) * (t - lethal_horizon) / max(
+                horizon - lethal_horizon, 1e-9)
+            values.append(np.full(len(chunks[-1]), 100 if t <= lethal_horizon + 1e-9
+                                  else int(round(graded))))
     if not chunks:
-        return np.zeros((0, 2))
-    points = np.vstack(chunks)
+        return np.zeros((0, 2)), np.zeros(0, dtype=int)
+    points, values = np.vstack(chunks), np.concatenate(values)
     keep = np.hypot(points[:, 0] - robot_xy[0], points[:, 1] - robot_xy[1]) > keep_out
-    return points[keep]
+    return points[keep], values[keep]
 
 
-def occupancy_grid(points, robot_xy, size=6.0, resolution=0.05):
+def occupancy_grid(points, robot_xy, size=6.0, resolution=0.05, values=None):
     """Square grid `size` metres wide around the robot: 100 in cells holding a point, else 0.
+
+    With `values` (one per point), each cell holds the highest value of its points instead.
 
     The origin is a multiple of `resolution`, as the rolling local costmap's is, so the cells line
     up with the costmap's. Returns (origin_x, origin_y, cells per side, data[row y, column x]).
@@ -94,7 +113,11 @@ def occupancy_grid(points, robot_xy, size=6.0, resolution=0.05):
     ix = np.floor((points[:, 0] - ox) / resolution).astype(int)
     iy = np.floor((points[:, 1] - oy) / resolution).astype(int)
     inside = (ix >= 0) & (ix < n) & (iy >= 0) & (iy < n)
-    data[iy[inside], ix[inside]] = 100
+    if values is None:
+        data[iy[inside], ix[inside]] = 100
+    else:
+        np.maximum.at(data, (iy[inside], ix[inside]),
+                      np.asarray(values, dtype=np.int8)[inside])
     return ox, oy, n, data
 
 
