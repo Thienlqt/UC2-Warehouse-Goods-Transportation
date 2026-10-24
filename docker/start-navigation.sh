@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # macOS (or any Docker host): start the ROS 1 Noetic stack in a container, with RViz on noVNC.
 # Build the image once:  docker build -t unity-robotics:noetic docker
-# Then:                  bash docker/start-navigation.sh [container-name]
+# Then:                  bash docker/start-navigation.sh [container-name] [launch args...]
+#   e.g.                 bash docker/start-navigation.sh planner:=teb
 set -euo pipefail
 
 repo="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-container_name="${1:-unity-nav2}"
+container_name=unity-nav2
+if [ $# -gt 0 ] && [[ $1 != *:=* ]]; then container_name=$1; shift; fi
+launch_args=""                       # name:=value arguments go to roslaunch
+if [ $# -gt 0 ]; then launch_args=$(printf '%q ' "$@"); fi
 image_name="${IMAGE:-unity-robotics:noetic}"
 ws=/home/ubuntu/catkin_ws
 
@@ -49,7 +53,8 @@ docker exec -d -u ubuntu -e DISPLAY=:1 -e HOME=/home/ubuntu "$container_name" ba
     source /opt/ros/noetic/setup.bash
     source $ws/devel/setup.bash
     export PYTHONUNBUFFERED=1  # node logs reach the file as they happen
-    exec roslaunch unity_slam_example unity_slam_example.launch > /tmp/unity-navigation.log 2>&1
+    exec roslaunch unity_slam_example unity_slam_example.launch $launch_args \
+        > /tmp/unity-navigation.log 2>&1
 "
 echo "Launch requested. Desktop: http://localhost:6080/vnc.html?password=ubuntu&autoconnect=true"
 echo "Open SimpleWarehouseScene in Unity, wait for script compilation, then press Play."

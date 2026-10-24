@@ -13,6 +13,7 @@ catkin_install_python(PROGRAMS
   nodes/cmd_vel_guard
   nodes/predicted_obstacles
   nodes/teleop_assist
+  nodes/teb_obstacles
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 
 install(DIRECTORY config launch models rviz
