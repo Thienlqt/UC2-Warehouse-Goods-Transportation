@@ -31,6 +31,8 @@ RADIUS = 0.25                    # robot_radius in config/move_base.yaml
 # frame: the body box (x -0.197..0.069, y +-0.133) and the wheels (x +-0.033, y +-0.153).
 # Clearance is measured from these, so a corner swinging into a shelf counts as contact.
 BODY = [(-0.197, -0.133, 0.069, 0.133), (-0.033, -0.153, 0.033, 0.153)]
+GOAL_TOLERANCE = 0.25            # xy_goal_tolerance: the final turn to the goal heading is free
+STALL_SPEED = 0.02               # slower than this (m/s, either way) counts as stalled
 LAG = 0.3                        # first-order motor lag (s)
 NOISE = 0.01                     # range noise (m)
 WALLS = [(5.0, 1.5, 9.0, 0.05), (5.0, -1.5, 9.0, 0.05)]     # a 3 m wide aisle along x
@@ -129,6 +131,65 @@ def body_clearance(x, y, yaw, boxes):
     if not boxes:
         return 99.0
     return min(box_clearance(px, py, b) for px, py in body_outline(x, y, yaw) for b in boxes)
+
+
+def box_points(box, spacing=0.1):
+    """Points along the perimeter of an axis-aligned box (cx, cy, hx, hy)."""
+    cx, cy, hx, hy = box[:4]
+    corners = [(cx - hx, cy - hy), (cx + hx, cy - hy), (cx + hx, cy + hy), (cx - hx, cy + hy)]
+    points = []
+    for (ax, ay), (bx, by) in zip(corners, corners[1:] + corners[:1]):
+        n = max(1, int(math.ceil(math.hypot(bx - ax, by - ay) / spacing)))
+        points += [(ax + (bx - ax) * k / n, ay + (by - ay) * k / n) for k in range(n)]
+    return points
+
+
+def traffic_blocking(x, y, yaw, outlines, distance=1.5, cone_deg=45.0, radius=RADIUS):
+    """True when a mover's outline is within `distance` of the robot and `cone_deg` of its nose.
+
+    A stop then counts as a traffic wait, not a stall. The robot's body is its `radius` circle.
+    """
+    cone = math.radians(cone_deg)
+    for outline in outlines:
+        for px, py in outline:
+            dx, dy = px - x, py - y
+            off = (math.atan2(dy, dx) - yaw + math.pi) % (2 * math.pi) - math.pi
+            if math.hypot(dx, dy) - radius <= distance and abs(off) <= cone:
+                return True
+    return False
+
+
+def stall_report(trace, goal, tolerance=GOAL_TOLERANCE, speed=STALL_SPEED):
+    """Stalls and traffic waits in a trace of (t, x, y, v, waiting) samples.
+
+    Not counted: the first turn (before the robot first drives) and the final turn (from the
+    first sample within `tolerance` of the goal). A waiting sample belongs to a traffic wait and
+    ends a stall. A run lasts from its first sample to the next sample after it.
+    """
+    start = next((i for i, s in enumerate(trace) if abs(s[3]) >= speed), len(trace))
+    end = next((i for i, s in enumerate(trace)
+                if math.hypot(s[1] - goal[0], s[2] - goal[1]) <= tolerance), len(trace))
+    stalls, waits = [], []
+    run, kind = None, None
+    for i in range(start, max(start, end)):
+        t, _, _, v, waiting = trace[i]
+        now = 'wait' if waiting and abs(v) < speed else 'stall' if abs(v) < speed else None
+        if now != kind and run is not None:
+            (stalls if kind == 'stall' else waits).append(t - run)
+            run = None
+        if now is not None and run is None:
+            run = t
+        kind = now
+    if run is not None:
+        last = trace[end][0] if end < len(trace) else trace[-1][0]
+        (stalls if kind == 'stall' else waits).append(last - run)
+    return {
+        'longest_stall': round(max(stalls, default=0.0), 2),
+        'stalls_over_3s': sum(s > 3.0 for s in stalls),
+        'wait_longest': round(max(waits, default=0.0), 2),
+        'wait_total': round(sum(waits), 2),
+        'waits': len(waits),
+    }
 
 
 def boxes_at(scene, elapsed):
