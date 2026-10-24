@@ -58,3 +58,16 @@ def test_cart_yields_then_turns_back():
         traffic.step(0.1, robot)
     bx, by, _, _ = traffic.boxes()[0]
     assert math.hypot(bx - robot[0], by - robot[1]) > 1.3 + 0.5
+
+
+def test_cart_keeps_a_berth_passing_the_robot():
+    # Robot 0.1 m beside the cart's lane, ahead of it: the Unity movers pass with a berth, so a
+    # bench cart must hold rather than brush past (the robot's clearance to movers is scored).
+    traffic = Traffic(0, carts=1, stops_per_minute=0.0)
+    cart = traffic.carts[0]
+    cart.start, cart.end, cart.progress = (2.0, 0.0), (8.0, 0.0), 0.5
+    cart.paused = cart.blocked = 0.0
+    before = traffic.boxes()[0]
+    for _ in range(30):
+        traffic.step(0.1, (6.3, 0.15))
+    assert traffic.boxes()[0] == before

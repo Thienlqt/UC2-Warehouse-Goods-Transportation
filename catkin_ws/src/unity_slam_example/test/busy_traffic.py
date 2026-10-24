@@ -4,7 +4,8 @@ The aisles are 3 m wide, along x at y = -4, 0, 4 and across at x = 2, 8, 14, bet
 shelves. The robot starts at the origin facing +x; GOAL is past the last cross aisle. Carts
 (WorkerWithCart: 0.6 x 1.6 m, 0.8 m/s) roam between aisle crossings like the Unity traffic:
 they keep right, pause at random, hold back from whatever is in the strip ahead of them (the
-robot included) and turn back after `patience` seconds blocked.
+robot included, with a `berth` around it, as the Unity movers pass wide) and turn back after
+`patience` seconds blocked.
 """
 
 from dataclasses import dataclass
@@ -50,9 +51,9 @@ class Cart:
 class Traffic:
     def __init__(self, seed, carts=10, speed=0.8, half_length=0.8, half_width=0.3, lane=0.5,
                  gap=0.8, stops_per_minute=1.0, stop_seconds=3.0, patience=5.0,
-                 start_clearance=3.0):
+                 start_clearance=3.0, berth=0.3):
         self.rng = random.Random(seed)
-        self.speed, self.lane, self.gap = speed, lane, gap
+        self.speed, self.lane, self.gap, self.berth = speed, lane, gap, berth
         self.half_length, self.half_width = half_length, half_width
         self.stop_rate, self.stop_seconds, self.patience = stops_per_minute / 60.0, stop_seconds, \
             patience
@@ -92,7 +93,7 @@ class Traffic:
         return (box[0], box[1] + dy * (box[3] + self.gap / 2), box[2], self.gap / 2)
 
     def free(self, cart, box, robot_xy, robot_radius):
-        return not touches_circle(box, robot_xy, robot_radius) and not any(
+        return not touches_circle(box, robot_xy, robot_radius + self.berth) and not any(
             overlap(box, self.box(c)) for c in self.carts if c is not cart)
 
     def step(self, dt, robot_xy, robot_radius=0.25):
