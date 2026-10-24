@@ -318,17 +318,14 @@ def main():
         blocked_at = time.monotonic()
         closest = [float('inf')]
 
-        def stopped():
-            closest[0] = min(closest[0], fixture.wall_x - fixture.x)
-            assert closest[0] > ROBOT_RADIUS, 'Robot body reached the wall'
-            return any(t > blocked_at + 0.5 and abs(x) < 0.001
-                       for t, x, _ in fixture.commands)
-        fixture.wait(stopped, seconds=45)
-        hold_until = time.monotonic() + 3.0  # Keep checking: no creeping into the wall.
+        # The robot may stop, or (min_vel_x < 0) back off and follow the wall looking for a way
+        # round through unknown space; either way its body must never reach the wall.
+        hold_until = blocked_at + 20.0
         while time.monotonic() < hold_until:
             time.sleep(0.05)
-            stopped()
-        print('PASS: robot stops %.2f m short of a wall blocking the path (body clearance %.2f m)'
+            closest[0] = min(closest[0], fixture.wall_x - fixture.x)
+            assert closest[0] > ROBOT_RADIUS, 'Robot body reached the wall'
+        print('PASS: robot holds %.2f m short of a wall blocking the path (body clearance %.2f m)'
               % (closest[0], closest[0] - ROBOT_RADIUS), flush=True)
 
         fixture.cancel.publish(GoalID())

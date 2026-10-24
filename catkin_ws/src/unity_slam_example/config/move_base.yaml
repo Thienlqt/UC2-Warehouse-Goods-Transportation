@@ -13,9 +13,13 @@ base_global_planner: navfn/NavfnROS
 base_local_planner: dwa_local_planner/DWAPlannerROS
 controller_frequency: 10.0
 planner_frequency: 1.0          # replan the global path at 1 Hz
-planner_patience: 5.0
-controller_patience: 15.0
-oscillation_timeout: 20.0       # recover if the robot moves < 0.1 m in 20 s
+# Act within 2 s when the planners fail: among roaming carts, 15 s of patience let the robot sit
+# still for 17 s with a lost route (Unity log, October 2026). The recovery list below is long so
+# a goal still aborts only after ~46 s of failing, as before: delivery_controller treats an
+# abort as a failed delivery. test/test_move_base_config.py checks this budget.
+planner_patience: 2.0
+controller_patience: 2.0
+oscillation_timeout: 10.0       # recover if the robot moves < 0.1 m in 10 s
 oscillation_distance: 0.1
 max_planning_retries: -1
 recovery_behavior_enabled: true
@@ -24,15 +28,57 @@ shutdown_costmaps: false
 # Recover by clearing the scan obstacles and replanning. The default list adds two full in-place
 # spins (rotate_recovery), which see nothing new with a 360 degree lidar and only stall the robot.
 # layer_names must match the costmap plugin names: the default ("obstacles") clears nothing here.
+# A recovery that gets the robot moving again resets the list; 22 clears x 2 s of patience keep
+# the old ~46 s before move_base aborts the goal.
 recovery_behaviors:
   - {name: conservative_reset, type: clear_costmap_recovery/ClearCostmapRecovery}
-  - {name: aggressive_reset, type: clear_costmap_recovery/ClearCostmapRecovery}
+  - {name: aggressive_reset_1, type: clear_costmap_recovery/ClearCostmapRecovery}
+  - {name: aggressive_reset_2, type: clear_costmap_recovery/ClearCostmapRecovery}
+  - {name: aggressive_reset_3, type: clear_costmap_recovery/ClearCostmapRecovery}
+  - {name: aggressive_reset_4, type: clear_costmap_recovery/ClearCostmapRecovery}
+  - {name: aggressive_reset_5, type: clear_costmap_recovery/ClearCostmapRecovery}
+  - {name: aggressive_reset_6, type: clear_costmap_recovery/ClearCostmapRecovery}
+  - {name: aggressive_reset_7, type: clear_costmap_recovery/ClearCostmapRecovery}
+  - {name: aggressive_reset_8, type: clear_costmap_recovery/ClearCostmapRecovery}
+  - {name: aggressive_reset_9, type: clear_costmap_recovery/ClearCostmapRecovery}
+  - {name: aggressive_reset_10, type: clear_costmap_recovery/ClearCostmapRecovery}
+  - {name: aggressive_reset_11, type: clear_costmap_recovery/ClearCostmapRecovery}
+  - {name: aggressive_reset_12, type: clear_costmap_recovery/ClearCostmapRecovery}
+  - {name: aggressive_reset_13, type: clear_costmap_recovery/ClearCostmapRecovery}
+  - {name: aggressive_reset_14, type: clear_costmap_recovery/ClearCostmapRecovery}
+  - {name: aggressive_reset_15, type: clear_costmap_recovery/ClearCostmapRecovery}
+  - {name: aggressive_reset_16, type: clear_costmap_recovery/ClearCostmapRecovery}
+  - {name: aggressive_reset_17, type: clear_costmap_recovery/ClearCostmapRecovery}
+  - {name: aggressive_reset_18, type: clear_costmap_recovery/ClearCostmapRecovery}
+  - {name: aggressive_reset_19, type: clear_costmap_recovery/ClearCostmapRecovery}
+  - {name: aggressive_reset_20, type: clear_costmap_recovery/ClearCostmapRecovery}
+  - {name: aggressive_reset_21, type: clear_costmap_recovery/ClearCostmapRecovery}
 conservative_reset:
   reset_distance: 3.0           # clear outside a 3 m square around the robot
   layer_names: [obstacle_layer]
-aggressive_reset:
+aggressive_reset_1: &aggressive_reset
   reset_distance: 1.0           # 4 x robot_radius, move_base's default for this step
   layer_names: [obstacle_layer]
+aggressive_reset_2: *aggressive_reset
+aggressive_reset_3: *aggressive_reset
+aggressive_reset_4: *aggressive_reset
+aggressive_reset_5: *aggressive_reset
+aggressive_reset_6: *aggressive_reset
+aggressive_reset_7: *aggressive_reset
+aggressive_reset_8: *aggressive_reset
+aggressive_reset_9: *aggressive_reset
+aggressive_reset_10: *aggressive_reset
+aggressive_reset_11: *aggressive_reset
+aggressive_reset_12: *aggressive_reset
+aggressive_reset_13: *aggressive_reset
+aggressive_reset_14: *aggressive_reset
+aggressive_reset_15: *aggressive_reset
+aggressive_reset_16: *aggressive_reset
+aggressive_reset_17: *aggressive_reset
+aggressive_reset_18: *aggressive_reset
+aggressive_reset_19: *aggressive_reset
+aggressive_reset_20: *aggressive_reset
+aggressive_reset_21: *aggressive_reset
 
 NavfnROS:
   allow_unknown: true
@@ -50,7 +96,7 @@ DWAPlannerROS:
   # tiny in-place turns below min_vel_theta, which can stall Unity's wheels.
   min_vel_trans: 0.03
   max_vel_x: 0.2
-  min_vel_x: 0.0
+  min_vel_x: -0.1                # back away slowly (both candidates); cmd_vel_guard checks it
   max_vel_y: 0.0
   min_vel_y: 0.0
   max_vel_theta: 0.5

@@ -119,3 +119,12 @@ def test_robot_does_not_drive_into_a_box_crossing_just_ahead():
     v, _ = guard_twist(0.2, 0.0, NO_POINTS, movers=[crossing])
     assert v == pytest.approx(0.2 * 0.3 / 1.2)
     assert guard_twist(-0.1, 0.0, NO_POINTS, movers=[crossing]) == (-0.1, 0.0)
+
+
+def test_reversing_towards_wall_behind_slows():
+    v, w = guard_twist(-0.1, 0.0, wall(-0.25))
+    assert -0.1 < v < 0.0
+
+
+def test_wall_behind_does_not_slow_forward():
+    assert guard_twist(0.2, 0.0, wall(-0.25)) == (0.2, 0.0)
