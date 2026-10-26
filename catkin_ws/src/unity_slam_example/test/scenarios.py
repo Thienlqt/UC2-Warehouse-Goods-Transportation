@@ -79,9 +79,10 @@ LAUNCH = """<launch>
   <param name="/use_sim_time" value="true"/>
   <node pkg="move_base" type="move_base" name="move_base">
     <rosparam command="load" file="{config}/move_base.yaml"/>
-    {local_planner}
-    <remap from="cmd_vel" to="cmd_vel_nav"/>
+    <rosparam command="load" file="{config}/move_base_predicted.yaml"/>
+    <remap from="cmd_vel" to="cmd_vel_dwa"/>
   </node>
+  <node pkg="unity_slam_example" type="reverse_limit" name="reverse_limit"/>
   <node pkg="unity_slam_example" type="cmd_vel_guard" name="cmd_vel_guard">
     <param name="robot_radius" value="{radius}"/>
   </node>
@@ -102,17 +103,9 @@ SLAM = """<node pkg="slam_toolbox" type="async_slam_toolbox_node" name="slam_too
     <rosparam command="load" file="{config}/slam_toolbox.yaml"/>
     <param name="scan_topic" value="/scan_static"/>
   </node>"""
-# --planner: the launch file's planner:=dwa|teb (local planner and its obstacle inputs).
-LOCAL_PLANNER = {
-    'dwa': '<rosparam command="load" file="{config}/move_base_predicted.yaml"/>',
-    'teb': '<rosparam command="load" file="{config}/teb_local_planner.yaml"/>',
-}
-TEB_OBSTACLES = '<node pkg="unity_slam_example" type="teb_obstacles" name="teb_obstacles"/>'
 # Counted in each trial's node log (see the trial's 'logs' directory).
 LOG_COUNTS = {'empty_plan': ('Received an empty transformed plan',),
-              'no_path': ('DWA planner failed to produce path',
-                          'TebLocalPlannerROS: trajectory is not feasible',
-                          'teb_local_planner was not able to obtain a local plan for the'),
+              'no_path': ('DWA planner failed to produce path',),
               'recoveries': ('Clearing both costmaps',)}
 
 
@@ -240,7 +233,7 @@ def log_counts(path):
     return {key: sum(text.count(m) for m in messages) for key, messages in LOG_COUNTS.items()}
 
 
-def run_trial(name, port, rate, perception, limit, seed=0, slam=False, planner='dwa'):
+def run_trial(name, port, rate, perception, limit, seed=0, slam=False):
     """One trial on its own ROS master; returns a result dict."""
     os.environ['ROS_MASTER_URI'] = 'http://localhost:%d' % port
     import rospkg
@@ -262,9 +255,7 @@ def run_trial(name, port, rate, perception, limit, seed=0, slam=False, planner='
     launch = os.path.join(work, 'trial.launch')
     with open(launch, 'w') as f:
         f.write(LAUNCH.format(config=config, radius=RADIUS,
-                              local_planner=LOCAL_PLANNER[planner].format(config=config),
-                              perception=(PERCEPTION + ('\n  ' + TEB_OBSTACLES if planner == 'teb'
-                                                        else '')) if perception else '',
+                              perception=PERCEPTION if perception else '',
                               slam=SLAM.format(config=config) if slam else ''))
     roslaunch = subprocess.Popen(['roslaunch', '-p', str(port), launch], stdout=log, stderr=log,
                                  start_new_session=True)
@@ -442,14 +433,12 @@ def main():
                         help='traffic seed of the first run; run k uses seed + k')
     parser.add_argument('--slam', action='store_true',
                         help='map with slam_toolbox (on /scan_static) instead of a known map')
-    parser.add_argument('--planner', choices=sorted(LOCAL_PLANNER), default='dwa',
-                        help='local planner, as the launch file\'s planner:=')
     parser.add_argument('--trial', help=argparse.SUPPRESS)
     parser.add_argument('--port', type=int, default=11320, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.trial:
         result = run_trial(args.trial, args.port, args.rate, not args.no_perception, args.limit,
-                           args.seed, args.slam, args.planner)
+                           args.seed, args.slam)
         print('RESULT ' + json.dumps(result), flush=True)
         return
     unknown = [s for s in args.scenes if s not in SCENES]
@@ -465,7 +454,7 @@ def main():
             scene, run = queue.pop(0)
             command = [sys.executable, os.path.abspath(__file__), '--trial', scene,
                        '--port', str(port), '--rate', str(args.rate), '--limit', str(args.limit),
-                       '--seed', str(args.seed + run), '--planner', args.planner]
+                       '--seed', str(args.seed + run)]
             if args.no_perception:
                 command.append('--no-perception')
             if args.slam:

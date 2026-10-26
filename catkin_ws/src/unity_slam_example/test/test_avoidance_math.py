@@ -4,9 +4,8 @@ import numpy as np
 import pytest
 
 from unity_slam_example.avoidance_math import (advance, box_outline, inverse_pose,
-                                               moving_polygons, occupancy_grid, predicted_costs,
-                                               predicted_points, rect_distance, Track,
-                                               track_to_frame)
+                                               occupancy_grid, predicted_costs, predicted_points,
+                                               rect_distance, Track, track_to_frame)
 
 
 def box(x=0.0, y=0.0, vx=0.0, vy=0.0, yaw=0.0, length=0.4, width=0.4, label='obstacle',
@@ -107,13 +106,3 @@ def test_occupancy_grid_keeps_maximum_value():
     _, _, _, data = occupancy_grid([(0.01, 0.01), (0.02, 0.02), (1.01, 0.01)], (0.0, 0.0),
                                    values=[40, 100, 40])
     assert data.max() == 100 and 40 in data
-
-
-def test_moving_polygons_filters_and_keeps_velocity():
-    cart = Track(1.0, 2.0, 0.0, 1.6, 0.6, 0.8, 0.0, 'obstacle', 0.9)
-    slow = cart._replace(vx=0.1)
-    unsure = cart._replace(score=0.2)
-    (corners, vx, vy, yaw), = moving_polygons([cart, slow, unsure])
-    assert sorted(map(tuple, np.round(corners, 6))) == [(0.2, 1.7), (0.2, 2.3), (1.8, 1.7),
-                                                         (1.8, 2.3)]
-    assert (vx, vy, yaw) == (0.8, 0.0, 0.0)

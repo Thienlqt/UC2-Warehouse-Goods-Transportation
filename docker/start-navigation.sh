@@ -2,7 +2,7 @@
 # macOS (or any Docker host): start the ROS 1 Noetic stack in a container, with RViz on noVNC.
 # Build the image once:  docker build -t unity-robotics:noetic docker
 # Then:                  bash docker/start-navigation.sh [container-name] [launch args...]
-#   e.g.                 bash docker/start-navigation.sh planner:=teb
+#   e.g.                 bash docker/start-navigation.sh perception:=false
 set -euo pipefail
 
 repo="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"

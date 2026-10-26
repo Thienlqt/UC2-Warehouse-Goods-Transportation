@@ -11,9 +11,9 @@ catkin_install_python(PROGRAMS
   nodes/camera_detector
   nodes/obstacle_fusion
   nodes/cmd_vel_guard
+  nodes/reverse_limit
   nodes/predicted_obstacles
   nodes/teleop_assist
-  nodes/teb_obstacles
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 
 install(DIRECTORY config launch models rviz

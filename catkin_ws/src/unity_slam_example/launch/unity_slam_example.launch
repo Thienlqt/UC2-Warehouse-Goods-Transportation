@@ -7,8 +7,6 @@
   <arg name="rviz" default="true"/>
   <arg name="perception" default="true"
        doc="Camera + lidar obstacle detection (boxes, labels, confidence)"/>
-  <arg name="planner" default="dwa"
-       doc="Local planner: dwa (DWA + predicted-path costmap layer) or teb (TEB + moving tracks)"/>
   <arg name="publish_sim_odom" default="true"
        doc="Derive simulated odometry from Unity TF; disable if another node publishes /odom"/>
 
@@ -27,16 +25,19 @@
     <param name="scan_topic" value="/scan_static" if="$(arg perception)"/>
   </node>
 
-  <!-- move_base -> /cmd_vel_nav -> cmd_vel_guard -> /cmd_vel (Unity AGVController). -->
+  <!-- move_base -> /cmd_vel_dwa -> reverse_limit -> /cmd_vel_nav -> cmd_vel_guard -> /cmd_vel
+       (Unity AGVController). -->
   <node pkg="move_base" type="move_base" name="move_base" output="screen">
     <rosparam command="load" file="$(arg params_file)"/>
-    <rosparam command="load" file="$(find unity_slam_example)/config/teb_local_planner.yaml"
-              if="$(eval planner == 'teb')"/>
-    <!-- Predicted paths of tracked obstacles (predicted_obstacles, below) in DWA's local costmap.
-         TEB predicts the tracks in time itself (teb_obstacles); both would count them twice. -->
+    <!-- Predicted paths of tracked obstacles (predicted_obstacles, below) in the local costmap. -->
     <rosparam command="load" file="$(find unity_slam_example)/config/move_base_predicted.yaml"
-              if="$(eval perception and planner == 'dwa')"/>
-    <remap from="cmd_vel" to="cmd_vel_nav"/>
+              if="$(arg perception)"/>
+    <remap from="cmd_vel" to="cmd_vel_dwa"/>
+  </node>
+  <!-- DWA reverses all the way to a goal behind the robot; keep each reverse short, then turn. -->
+  <node pkg="unity_slam_example" type="reverse_limit" name="reverse_limit" output="screen">
+    <param name="budget" value="0.15"/>     <!-- metres of reversing before turning in place -->
+    <param name="turn_rate" value="0.4"/>   <!-- rad/s, within the Unity controller limit -->
   </node>
   <node pkg="unity_slam_example" type="cmd_vel_guard" name="cmd_vel_guard" output="screen">
     <param name="robot_radius" value="0.25"/>  <!-- keep equal to the costmaps' robot_radius -->
@@ -81,12 +82,6 @@
     <!-- respawn: the local costmap keeps the last grid it received. -->
     <node pkg="unity_slam_example" type="predicted_obstacles" name="predicted_obstacles"
           output="screen" respawn="true"/>
-    <!-- Moving tracks with their velocities for TEB; keep equal to the guard. -->
-    <node pkg="unity_slam_example" type="teb_obstacles" name="teb_obstacles" output="screen"
-          respawn="true" if="$(eval planner == 'teb')">
-      <param name="min_speed" value="0.15"/>
-      <param name="min_confidence" value="0.3"/>
-    </node>
   </group>
 
   <node pkg="rviz" type="rviz" name="rviz" if="$(arg rviz)"

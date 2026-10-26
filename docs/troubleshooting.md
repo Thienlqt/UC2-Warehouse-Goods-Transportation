@@ -14,7 +14,7 @@
   goals. It keeps waiting, however long Unity takes.
 - **cmd_vel_guard is holding the robot.** `No fresh /scan in 1.0 s: holding the robot still` means
   the lidar stopped; the guard sends zero velocity until `/scan` is back. Compare
-  `rostopic echo /cmd_vel_nav` (move_base) with `/cmd_vel` (after the guard): near obstacles the
+  `rostopic echo /cmd_vel_nav` (move_base, after `reverse_limit`) with `/cmd_vel` (after the guard): near obstacles the
   guard slows the command on purpose.
 - **Robot controller mode.** On `TurtleBot3ManualConfig`, the AGV Controller must be in ROS mode,
   and first-person driving (**P**) must be off or in assisted mode: in direct mode (**O**),

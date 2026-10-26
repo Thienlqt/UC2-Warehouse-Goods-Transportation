@@ -22,7 +22,6 @@ sudo apt-get install -y --no-install-recommends \
     ros-noetic-move-base \
     ros-noetic-navfn \
     ros-noetic-dwa-local-planner \
-    ros-noetic-teb-local-planner \
     ros-noetic-slam-toolbox \
     ros-noetic-tf2-ros \
     ros-noetic-rviz \

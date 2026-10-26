@@ -15,7 +15,7 @@ Unity colliders -> LaserScanSensor -> /scan -> obstacle layer -> inflation layer
                                         |                      |
 Goal + SLAM map -> NavfnROS global path -> DWA local planner <-+
                                         |      |
-                                        |   /cmd_vel_nav
+                                        |   /cmd_vel_dwa -> reverse_limit -> /cmd_vel_nav
                                         +-> cmd_vel_guard -> /cmd_vel -> Unity AGVController -> wheels
 
 With perception (default):
@@ -44,9 +44,11 @@ bash scripts/run_ros.sh           # Ubuntu / WSL: native, RViz opens as a window
 ```
 
 `launch/unity_slam_example.launch` starts slam_toolbox, move_base (NavfnROS global planner,
-DWAPlannerROS local planner), `cmd_vel_guard` and, with perception, `predicted_obstacles`. The
-costmaps wait for TF indefinitely, so ROS can start before you press Play. Commands flow
-move_base → `/cmd_vel_nav` → `cmd_vel_guard` → `/cmd_vel` (Unity). The guard is a last-resort
+DWAPlannerROS local planner), `reverse_limit`, `cmd_vel_guard` and, with perception,
+`predicted_obstacles`. The costmaps wait for TF indefinitely, so ROS can start before you press
+Play. Commands flow move_base → `/cmd_vel_dwa` → `reverse_limit` → `/cmd_vel_nav` →
+`cmd_vel_guard` → `/cmd_vel` (Unity). `reverse_limit` lets each stretch of reversing cover at most
+0.15 m, then turns the robot in place until DWA drives forward again. The guard is a last-resort
 stop: it rolls the command forward and slows it if the robot's circle (0.25 m) would touch at
 least 6 scan points, or one moving tracked obstacle, within 1.2 s, down to zero at contact
 within 0.1 s. It also sends zero velocity while `/scan` is older than 1 s. Its parameters are in
@@ -71,7 +73,9 @@ workspace on every start, so rerun it to pick up ROS configuration/code changes.
 
 Edit `catkin_ws/src/unity_slam_example/config/move_base.yaml`. This configuration targets the
 installed **ROS 1 Noetic** navigation stack. The values below are starting points, not tuned
-results: re-tune them with the tests below and record the values you settle on.
+results: re-tune them with the tests below and record the values you settle on. The patience,
+recovery, reverse and direction-lock rows were tuned for a busy warehouse in October 2026 (see
+[Busy warehouse: choosing the local planner](#busy-warehouse-choosing-the-local-planner)).
 
 | Setting | Initial value | Purpose |
 |---|---:|---|
@@ -90,15 +94,22 @@ results: re-tune them with the tests below and record the values you settle on.
 | Turn acceleration (`acc_lim_theta`) | 2.5 rad/s² | Make the minimum turn rate reachable from rest in the 10 Hz dynamic window |
 | DWA prediction horizon (`sim_time`) | 2 s | Evaluate candidate motion against current obstacles |
 | Scoring (`path_distance_bias`, `goal_distance_bias`, `occdist_scale`) | 32, 24, 0.1 | Follow the path vs. head for the goal vs. keep away from obstacles |
-| Recovery (`recovery_behaviors`) | Clear obstacle layer outside 3 m, then outside 0.92 m | Replan on a cleaned costmap; no in-place spins |
+| Planner and controller patience (`planner_patience`, `controller_patience`) | 2 s | Start recovering within 2 s when Navfn finds no path or DWA no valid command |
+| Oscillation timeout (`oscillation_timeout`) | 10 s | Recover if the robot moves less than 0.1 m in 10 s |
+| Recovery (`recovery_behaviors`) | 22 clears: obstacle layer outside 3 m, then 21 times outside 1 m | Replan on a cleaned costmap; no in-place spins. 22 clears × 2 s of patience keep about 46 s before move_base aborts a goal |
+| Slowest reverse (`min_vel_x`) | −0.05 m/s | DWA may back away slowly; `cmd_vel_guard` checks it |
+| Direction lock (`oscillation_reset_dist`) | 0.01 m | DWA locks out the opposite direction until the robot has moved this far, so one reverse arc no longer locks out forward motion |
+| Reverse budget (`reverse_limit`: `budget`, `turn_rate`, in the launch file) | 0.15 m, 0.4 rad/s | Each stretch of reversing covers at most 0.15 m; then the robot turns in place until DWA drives forward |
 | Maximum scan interval (`expected_update_rate`) | 0.5 s | Mark the observation source stale if scans stop |
 
 DWA requires a candidate to meet at least one of its translating/turning minimums.
 Setting `min_vel_trans` to zero permits tiny in-place turns even when `min_vel_theta`
-is positive. The startup settings above prevent that stall while `min_vel_x: 0`
-still permits rotation without driving forward. They are planner sampling limits;
-the collision checks and `cmd_vel_guard` can still slow or stop the robot. Restart ROS after
-editing these settings.
+is positive. The startup settings above prevent that stall. DWA may also back away, at up to
+0.05 m/s (`min_vel_x: -0.05`), which lets it give way to carts in a busy aisle. Nothing in DWA's
+scoring prefers driving forward, though: with the goal behind the robot it reverses all the way
+there. `reverse_limit` therefore stops each reverse after 0.15 m and turns the robot in place
+instead. These are planner sampling limits; the collision checks and `cmd_vel_guard` can still
+slow or stop the robot. Restart ROS after editing these settings.
 
 `occdist_scale` was 0.02, which let DWA follow the path within about 0.25 m of thin objects
 such as posts. The scan marks those only from close up, and once the robot's footprint touches
@@ -172,7 +183,8 @@ look like it is moving, so its predicted path no longer blocks the robot's own r
 coming straight at the robot (or from behind) is confirmed too, within about 0.5 s. Ten times a
 second, it publishes `/obstacles_predicted`: a 6 × 6 m, 5 cm grid around the robot.
 - Each confident moving track (score ≥ 0.3, speed ≥ 0.15 m/s) sweeps its box outline along its
-  velocity for 2 s. The swept cells are lethal.
+  velocity for 2 s. The cells swept in the first 0.8 s are lethal. Further along, the cost falls
+  from 80 down to 30 (of 100): DWA may cross those cells but prefers not to.
 - A class listed under `padding` gets that much extra clearance. It is marked even when it stands
   still, so a person (0.35 m) is passed wider than a box.
 - Cells within 0.45 m of the robot are left free, so a prediction crossing the robot cannot
@@ -208,6 +220,8 @@ Tune `predicted_obstacles` in `config/perception.yaml`:
 | Setting | Initial value | Purpose |
 |---|---:|---|
 | `horizon` / `step` | 2 s / 0.2 s | How far ahead to predict (DWA `sim_time`) and how finely |
+| `lethal_horizon` | 0.8 s | Lethal only where a track will be within this time |
+| `graded_max` / `graded_min` | 80 / 30 | Cost after `lethal_horizon`, falling along the path. 80 is below DWA's inscribed cost, so these cells never block a trajectory |
 | `min_speed` | 0.15 m/s | Slower tracks count as static |
 | `min_confidence` | 0.3 | Fused scores can be lower than lidar-only ones |
 | `padding` | `person: 0.35` m | Extra clearance per class; unlisted classes get none |
@@ -220,10 +234,11 @@ in the launch file; keep them equal.
 Limits:
 - Constant velocity only. A track that turns or stops is re-predicted at the next scan (10 Hz),
   not anticipated. A box that turns back towards a robot already crossing its path can still
-  reach it: DWA does not reverse (`min_vel_x: 0`) and the guard only stops it driving further in.
-  `test/scenarios.py sweeper` shows this with a box sweeping back and forth across an aisle.
-- The robot does not get out of the way of something faster coming from behind (`overtaken`).
-  It is ignored by the guard (braking cannot help) and DWA only plans forward.
+  reach it: DWA backs away only slowly (0.05 m/s, at most 0.15 m at a time) and the guard only
+  stops it driving further in. `test/scenarios.py sweeper` shows this with a box sweeping back
+  and forth across an aisle; it still reaches 0.00 m.
+- The robot does not get out of the way of something faster coming from behind (`overtaken`,
+  0.00 m). It is ignored by the guard (braking cannot help) and DWA does not plan to step aside.
 - A track needs two scans to be confirmed, and its velocity settles over a few more. A fast
   object appearing at close range is handled by the scan and the guard first.
 - Only what the 2D lidar sees gets a track. The camera adds labels, not new obstacles.
@@ -284,7 +299,8 @@ on Ubuntu / WSL a new terminal with `source /opt/ros/noetic/setup.bash && source
 rostopic info /scan
 rostopic echo /odom
 # Ctrl+C stops an echo command.
-rostopic echo /cmd_vel_nav   # what move_base asks for
+rostopic echo /cmd_vel_dwa   # what move_base asks for
+rostopic echo /cmd_vel_nav   # after reverse_limit
 rostopic echo /cmd_vel       # what reaches Unity after cmd_vel_guard
 rostopic hz /obstacles_predicted   # 10 Hz with perception on
 rostopic echo /cmd_vel_teleop      # the keys while driving assisted (P)
@@ -442,7 +458,7 @@ For ROS evidence, in a ROS shell:
 
 ```bash
 rosbag record -O /tmp/avoidance_trial.bag /scan /odom /tf /tf_static /clock \
-  /cmd_vel_nav /cmd_vel /move_base/NavfnROS/plan /move_base/DWAPlannerROS/local_plan \
+  /cmd_vel_dwa /cmd_vel_nav /cmd_vel /move_base/NavfnROS/plan /move_base/DWAPlannerROS/local_plan \
   /move_base/local_costmap/costmap /map
 ```
 
@@ -458,11 +474,13 @@ Record short trials to limit disk use.
 ## Automated ROS checks
 
 Unit tests cover body-frame velocities, yaw wrap, stale/reset timestamps, the guard's
-slow-down and stop logic including moving obstacles (`test/test_guard_math.py`), and the
-prediction geometry and grid (`test/test_avoidance_math.py`). `test/check_obstacle_costmap.py`
-runs the real Noetic move_base, `cmd_vel_guard`, `tf_odometry` and `predicted_obstacles` with
-synthetic TF, map, scans and tracks. It checks obstacle marking and clearing, the predicted path
-of a moving track being marked and then cleared, forward commands, stopping short of a wall, and
+slow-down and stop logic including moving obstacles (`test/test_guard_math.py`), the reverse
+budget (`test/test_reverse_limit.py`), and the prediction geometry and grid
+(`test/test_avoidance_math.py`). `test/check_obstacle_costmap.py` runs the real Noetic move_base,
+`reverse_limit`, `cmd_vel_guard`, `tf_odometry` and `predicted_obstacles` with synthetic TF, map,
+scans and tracks. It checks obstacle marking and clearing, the predicted path of a moving track
+being marked and then cleared, forward commands, holding short of a wall (the robot may back off
+and follow it), and
 the guard's stop when scans cease. Startup trials use headings of 0, 90 and 180 degrees and
 model a motor deadband for very weak commands: each trial must produce useful motion commands
 within 2 s and complete the goal. Finally it holds "W" towards a box 3 m ahead and checks that
@@ -491,8 +509,8 @@ cd src/unity_slam_example
 python3 -m pytest -q test/ && python3 test/check_obstacle_costmap.py'
 ```
 
-Expect fourteen `PASS:` lines. The twelfth reports how far the robot stopped from the wall, the
-last how close the body came to the box.
+Expect fourteen `PASS:` lines. The twelfth reports how far short of the wall the robot held (it
+may back off and follow the wall), the last how close the body came to the box.
 
 ### Scenario trials
 
@@ -505,7 +523,17 @@ slows it down without changing the result. Run it after the checks above, from
 ```bash
 python3 test/scenarios.py                       # every scene once
 python3 test/scenarios.py rack_end cross --runs 3
+python3 test/scenarios.py busy --runs 5 --seed 0  # run k uses traffic seed 0 + k
+python3 test/scenarios.py busy --slam             # slam_toolbox maps instead of a known map
 ```
+
+`busy` is a warehouse with ten carts roaming its aisles; `--seed` picks the traffic, so the same
+seed gives the same carts for every configuration. Each run's line adds *stall* (the longest the
+robot stood still without traffic in its way), *wait* (the longest it stood still for traffic),
+*movers* (closest to a moving box), and counts of three node-log warnings: *empty plan* ("Received
+an empty transformed plan"), *no path* ("DWA planner failed to produce path") and *recoveries*
+("Clearing both costmaps"). The summary per scene gives the worst run: longest time and stall,
+closest clearance.
 
 Results, 3 trials per scene, October 2026. Time is to the goal (or to giving up); *stopped*
 includes the final turn to the goal heading (2–3 s); clearance is the closest the robot's
@@ -533,6 +561,85 @@ move_base aborted. `aisle_tight` is a stress test: the 0.25 m robot circle leave
 side, and the robot can still hesitate there, turning on the spot while Navfn chooses between
 the two gaps. `overtaken` and `sweeper` are the limits listed under
 [Moving and labelled obstacles](#moving-and-labelled-obstacles).
+
+Results with the settings in this repository (tuned DWA + `reverse_limit`), 3 trials per scene,
+October 2026:
+
+| Scene | Reached | Time | Stopped | Stall | Wait | Clearance | Movers | Off goal |
+|---|---|---|---|---|---|---|---|---|
+| `shelf_end` | 3/3 | 41 s | 4 s | 0.0 s | 0.0 s | 0.47 m | — | 0.21 m |
+| `rack_end` | 3/3 | 43 s | 4 s | 0.5 s | 0.0 s | 0.47 m | — | 0.21 m |
+| `open_box` | 3/3 | 39 s | 2 s | 0.0 s | 0.0 s | 0.50 m | — | 0.20 m |
+| `goal_at_box` | 0/3, as intended | 49 s | 49 s | 0.0 s | 0.0 s | — | — | does not move |
+| `post` | 3/3 | 38 s | 2 s | 0.0 s | 0.0 s | 0.51 m | — | 0.20 m |
+| `aisle_narrow` | 3/3 | 46 s | 6 s | 2.0 s | 0.0 s | 0.36 m | — | 0.19 m |
+| `aisle_tight` | 3/3 | 87 s | 41 s | 12.8 s | 0.0 s | 0.14 m | — | 0.21 m |
+| `cross` | 3/3 | 44 s | 1 s | 0.1 s | 0.3 s | 1.29 m | 1.29 m | 0.21 m |
+| `cross_fast` | 3/3 | 43 s | 2 s | 0.0 s | 0.0 s | 0.66 m | 0.66 m | 0.21 m |
+| `headon` | 3/3 | 44 s | 2 s | 0.0 s | 0.0 s | 0.12 m | 0.12 m | 0.20 m |
+| `overtaken` | 3/3 | 54 s | 7 s | 2.5 s | 1.6 s | 0 (contact) | 0 (contact) | 0.20 m |
+| `sweeper` | 3/3 | 74 s | 13 s | 6.7 s | 1.6 s | 0 (contact) | 0 (contact) | 0.21 m |
+| `busy` | 3/3 | 125 s | 14 s | 5.0 s | 1.9 s | 0.38 m | 0.38 m | 0.21 m |
+
+`aisle_tight` varies most from run to run, so it was also run 10 times per configuration: the
+settings in the October 2026 table above reached 9/10 (closest 0.13 m), tuned DWA 8/10 (0.08 m),
+and tuned DWA + `reverse_limit` 7/10 (0.14 m). `aisle_narrow` ×15 reached 15/15, but its closest
+clearance was 0.34 m, with stalls up to 7.4 s (see below).
+
+### Busy warehouse: choosing the local planner
+
+Among roaming carts the robot sometimes stood still for 10 s or more. Two local planners were
+compared in `busy` (10 carts, seeds 0-4, 5 runs each):
+
+| Configuration | Reached | Time to goal | Longest stall | Closest to a cart |
+|---|---|---|---|---|
+| Settings in the October 2026 table | 5/5 | 103-209 s | 0.3-10.9 s | 0.16 m |
+| Shared fixes only | 5/5 | 97-193 s | 0.9-2.7 s | 0.30 m |
+| A: DWA + graded predicted cost | 5/5 | 90-173 s (mean 140) | 0.3-0.9 s | 0.16 m |
+| B: TEB | 5/5 | 96-130 s (mean 107) | 0.2-1.7 s | 0.34 m |
+
+The shared fixes, used by both candidates, are the 2 s patience and the 22 recoveries. A then
+lost clearance in `aisle_narrow` (0.24-0.31 m in 3 of 5 runs, stalls of 4.1-5.5 s), because DWA
+reversed at the box. Tracing it showed how: just before the box, a short reverse arc edged ahead
+of the best forward trajectory by a few points; once DWA picked it, its oscillation suppression
+locked out forward motion until the robot had moved `oscillation_reset_dist` (0.05 m); the turn
+direction locked the same way, so the robot spun away from the goal and backed towards the box
+before turning back. Without reversing there was no reverse arc to win, but `busy` then stalled
+for 6.0 and 8.2 s. A slower reverse (`min_vel_x: -0.05`) and a 0.01 m lock fixed both:
+`aisle_narrow` 15/15 at 0.41-0.43 m, stalls up to 1.3 s. In `busy`, seeds 0-4 twice and seeds
+5-14 once, all 20 runs reached the goal in 99-185 s, closest to a cart 0.17 m; 1 of the 20 runs
+had a 3.8 s stall, the others at most 2.0 s.
+
+DWA won, although it does not pass every line:
+- TEB cut the static clearance by 0.10-0.15 m (about 0.30 m in every static scene) and reached
+  `aisle_tight` 0/3.
+- The tuned DWA is about 10-30 % slower in `busy` (means 117-133 s against 107 s), but adds no
+  dependency.
+
+A slow reverse left one problem: with the goal behind it, DWA backed the whole way there, and the
+180-degree startup check timed out (35 s) in 3 of 6 runs. `reverse_limit` keeps each reverse to
+0.15 m, then turns in place: the check passes in 16.2-16.4 s (23.9 s with the October 2026
+settings). It costs some of the tuning's gains:
+- `busy`, seeds 0-14: 15/15 reached in 91-157 s (mean 119), closest to a cart 0.19 m, but 4 of
+  15 runs stalled longer than 3 s (3.8, 4.7, 6.3 and 7.4 s).
+- `aisle_narrow` ×15: 15/15, but the closest clearance fell to 0.34 m (0.05 m below 0.42 m would
+  be 0.37 m), with stalls up to 7.4 s.
+- A 0.3 m budget did no better: one 7.1 s stall in `busy`, and two `aisle_narrow` runs at 0.16 m.
+
+The repository ships the 0.15 m budget: no contacts in `busy` or `aisle_narrow`, and the 3 s
+stall line is missed in 4 of 15 runs. `overtaken` and `sweeper` still reach 0.00 m, the known
+limits.
+
+Unity confirmation: pending. Three sessions of about 10 minutes with about 10 `WorkerWithCart`,
+measured with `test/unity_stall_monitor.py`, including container CPU, are still to be run.
+
+### Open issue: lost route with SLAM
+
+`busy --slam` reached 1/3: run 2 logged 173 "empty transformed plan" warnings, an 8.3 s stall and
+then aborted; run 1 failed at once with "Failed to find a valid plan". This was measured before
+the DWA tuning, and the cause is unconfirmed; the suspect is a jump in `map → odom`. Reproduce
+with `python3 test/scenarios.py busy --slam --runs 3`. It is tracked separately; if the cause is in
+`slam_toolbox.yaml` or `tf_odometry`, it goes to Đức Trí.
 
 References: [costmap_2d obstacle layer (ROS wiki)](https://wiki.ros.org/costmap_2d/hydro/obstacles),
 [dwa_local_planner](https://wiki.ros.org/dwa_local_planner) and

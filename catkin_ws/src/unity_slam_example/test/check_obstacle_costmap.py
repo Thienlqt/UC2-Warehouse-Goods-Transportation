@@ -42,8 +42,9 @@ LAUNCH = """<launch>
   <node pkg="move_base" type="move_base" name="move_base">
     <rosparam command="load" file="{config}/move_base.yaml"/>
     <rosparam command="load" file="{config}/move_base_predicted.yaml"/>
-    <remap from="cmd_vel" to="cmd_vel_nav"/>
+    <remap from="cmd_vel" to="cmd_vel_dwa"/>
   </node>
+  <node pkg="unity_slam_example" type="reverse_limit" name="reverse_limit"/>
   <node pkg="unity_slam_example" type="cmd_vel_guard" name="cmd_vel_guard">
     <param name="robot_radius" value="{radius}"/>
   </node>

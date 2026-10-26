@@ -128,9 +128,3 @@ def rect_distance(px, py, track):
     along, across = c * dx + s * dy, -s * dx + c * dy
     return math.hypot(max(abs(along) - track.length / 2, 0.0),
                       max(abs(across) - track.width / 2, 0.0))
-
-
-def moving_polygons(tracks, min_speed=0.15, min_confidence=0.3):
-    """(corners (4, 2), vx, vy, yaw) of confident moving tracks: TEB's dynamic obstacles."""
-    return [(box_outline(t, 0.0, spacing=1e9), t.vx, t.vy, t.yaw) for t in tracks
-            if t.score >= min_confidence and speed(t) >= min_speed]
